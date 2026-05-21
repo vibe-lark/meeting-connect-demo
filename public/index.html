@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MeetBack 会议同步台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <main class="main">
+        <header class="topbar">
+          <div class="title-block">
+            <div class="brand">
+              <span class="brand-mark">M</span>
+              <div>
+                <strong>MeetBack</strong>
+              </div>
+            </div>
+            <h1>MeetBack 会议同步台</h1>
+            <p>演示飞书会议开放能力：在自研页面发起真实会议，并把会后的妙记和智能纪要回写到多维表格。</p>
+          </div>
+          <div class="top-actions">
+            <button id="oauthButton" class="primary compact-button" type="button">飞书登录</button>
+            <span id="oauthStatus" class="status-badge" hidden>检查授权中</span>
+          </div>
+        </header>
+
+        <section class="integration-flow" aria-label="集成链路">
+          <div class="flow-heading">
+            <span>技术链路</span>
+            <strong>可验收的开放能力</strong>
+          </div>
+          <div class="flow-step" id="stepSso">
+            <span class="step-index">1</span>
+            <div>
+              <strong>登录飞书</strong>
+              <small id="stepSsoText">等待登录</small>
+            </div>
+          </div>
+          <div class="flow-step" id="stepMeeting">
+            <span class="step-index">2</span>
+            <div>
+              <strong>发起真实会议</strong>
+              <small id="stepMeetingText">登录后可创建</small>
+            </div>
+          </div>
+          <div class="flow-step" id="stepBase">
+            <span class="step-index">3</span>
+            <div>
+              <strong>写入多维表格</strong>
+              <small id="stepBaseText">检查中</small>
+            </div>
+          </div>
+          <div class="flow-step" id="stepSummary">
+            <span class="step-index">4</span>
+            <div>
+              <strong>回写智能纪要</strong>
+              <small id="stepSummaryText">等待会议结束</small>
+            </div>
+          </div>
+        </section>
+
+        <section class="content-grid">
+          <section class="panel command-panel" aria-labelledby="create-title">
+            <div class="panel-head">
+              <div>
+                <h2 id="create-title">发起会议</h2>
+                <p>用当前登录人创建真实飞书会议。短会测试时请开启录制和智能纪要。</p>
+              </div>
+            </div>
+            <form id="meetingForm" class="form-stack">
+              <label>
+                <span>会议主题</span>
+                <input id="topic" name="topic" maxlength="120" value="客户方案演示会议" required />
+              </label>
+              <div class="form-row">
+                <label>
+                  <span>会议时长</span>
+                  <select id="durationMinutes" name="durationMinutes">
+                    <option value="5" selected>5 分钟（推荐测试）</option>
+                    <option value="30">30 分钟</option>
+                    <option value="60">1 小时</option>
+                    <option value="120">2 小时</option>
+                    <option value="1440">1 天</option>
+                  </select>
+                </label>
+                <label>
+                  <span>会议密码</span>
+                  <input id="password" name="password" inputmode="numeric" placeholder="可选，4-9 位数字" />
+                </label>
+              </div>
+              <label class="toggle">
+                <input id="autoRecord" name="autoRecord" type="checkbox" checked />
+                <span>创建会议时自动打开录制</span>
+              </label>
+              <button id="createButton" class="primary" type="submit" disabled>登录后发起会议</button>
+            </form>
+          </section>
+
+          <section class="panel status-panel" aria-labelledby="status-title">
+            <div class="panel-head compact">
+              <div>
+                <h2 id="status-title">会议状态</h2>
+                <p>入会链接、纪要回写进度和查看入口都在这里。</p>
+              </div>
+              <button id="refreshButton" class="secondary" type="button" disabled>刷新</button>
+            </div>
+            <div class="status-stack">
+              <div id="meetingState" class="empty-state">
+                <strong>暂无会议</strong>
+                <span>发起会议后，这里会显示会议号和入会链接。</span>
+              </div>
+              <div id="summaryState" class="summary-state compact-state">
+                <strong>等待纪要</strong>
+                <span>会议结束后等待飞书生成妙记和智能纪要。</span>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section class="panel table-panel" aria-labelledby="table-title">
+          <div class="panel-head compact">
+            <div>
+              <h2 id="table-title">演示数据表</h2>
+              <p>所有会议记录和纪要结果以这个真实多维表格为准。</p>
+            </div>
+            <div class="panel-actions">
+              <a id="baseLink" class="secondary link-button" href="#" target="_blank" rel="noreferrer" hidden>打开数据表</a>
+              <button id="reloadRecordsButton" class="secondary" type="button" disabled>刷新数据</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>会议主题</th>
+                  <th>状态</th>
+                  <th>会议号</th>
+                  <th>纪要</th>
+                  <th>数据表同步</th>
+                  <th>更新时间</th>
+                  <th>查看</th>
+                </tr>
+              </thead>
+              <tbody id="recordsBody">
+                <tr>
+                  <td colspan="7" class="table-empty">暂无数据</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <details class="panel table-panel technical-panel" aria-labelledby="event-title">
+          <summary>
+            <span>技术验收</span>
+            <small>事件接收、妙记解析和表格写入</small>
+          </summary>
+          <div class="manual-sync">
+            <div>
+              <h2>手动补同步</h2>
+              <p>仅用于事件延迟时排查。客户演示时可以保持折叠。</p>
+            </div>
+            <form id="summaryForm" class="summary-form">
+              <label>
+                <span>飞书妙记链接或 token</span>
+                <input id="minuteUrl" name="minuteUrl" placeholder="事件延迟时粘贴真实妙记链接" />
+              </label>
+              <label>
+                <span>智能纪要 note_id</span>
+                <input id="noteId" name="noteId" placeholder="可选；必须是真实 note_id" />
+              </label>
+              <button id="syncButton" class="secondary" type="submit" disabled>同步纪要到数据表</button>
+            </form>
+          </div>
+          <div class="panel-head compact">
+            <div>
+              <h2 id="event-title">飞书事件状态</h2>
+              <p>用于确认会议结束后飞书是否推送 recording_ready，以及同步是否成功。</p>
+            </div>
+            <div class="panel-actions">
+              <button id="retrySummaryButton" class="secondary" type="button">重试最近同步</button>
+              <button id="reloadEventsButton" class="secondary" type="button">刷新事件</button>
+            </div>
+          </div>
+          <div id="eventHint" class="event-hint" hidden></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>事件</th>
+                  <th>状态</th>
+                  <th>会议号</th>
+                  <th>妙记 Token</th>
+                  <th>时间</th>
+                </tr>
+              </thead>
+              <tbody id="eventsBody">
+                <tr>
+                  <td colspan="5" class="table-empty">暂无事件</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </main>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

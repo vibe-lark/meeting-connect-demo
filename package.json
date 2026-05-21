@@ -1,0 +1,26 @@
+{
+  "name": "meeting-connect-demo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bootstrap:base": "node scripts/bootstrap-meeting-base.js",
+    "backfill:bitable-links": "node scripts/backfill-bitable-links.js",
+    "dev": "node --watch src/server.js",
+    "check:permissions": "node scripts/check-feishu-permissions.js",
+    "retry:summary": "node scripts/retry-latest-summary-sync.js",
+    "status:demo": "node scripts/demo-status.js",
+    "demo:status": "node scripts/demo-status.js",
+    "audit:completion": "node scripts/completion-audit.js",
+    "watch:summary": "node scripts/watch-summary-sync.js",
+    "watch:completion": "node scripts/watch-completion.js",
+    "test": "node --test",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "zod": "^3.24.1"
+  }
+}
