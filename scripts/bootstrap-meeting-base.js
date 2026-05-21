@@ -4,7 +4,6 @@ import path from 'node:path';
 import { isInternetReadableBasePermission } from '../src/meeting-sync.js';
 
 const feishuBaseUrl = process.env.FEISHU_BASE_URL || 'https://open.feishu.cn';
-const ownerOpenId = process.env.FEISHU_OWNER_ID || 'ou_8fae58c6480696bebd6418da213ecde8';
 const dataDir = path.resolve('data');
 const baseConfigPath = path.join(dataDir, 'base-config.json');
 
@@ -67,16 +66,12 @@ async function main() {
 
   const token = await getTenantAccessToken();
   const created = await createBase(token);
-  await addOwnerCollaborator(token, created.appToken);
-  await transferOwner(token, created.appToken);
   const permission = await openInternetReadable(token, created.appToken);
 
   const config = {
     appToken: created.appToken,
     tableId: created.tableId,
     url: created.url,
-    ownerOpenId,
-    ownerTransferred: true,
     publicPermission: permission,
     createdAt: new Date().toISOString()
   };
@@ -86,7 +81,6 @@ async function main() {
   console.log(`Created Meeting Base: ${created.url}`);
   console.log(`app_token=${created.appToken}`);
   console.log(`table_id=${created.tableId}`);
-  console.log(`owner_open_id=${ownerOpenId}`);
 }
 
 async function ensureFields(token, appToken, tableId) {
@@ -141,36 +135,6 @@ async function createBase(token) {
     tableId,
     url: app.url
   };
-}
-
-async function addOwnerCollaborator(token, appToken) {
-  return feishuRequest(`/open-apis/drive/v1/permissions/${encodeURIComponent(appToken)}/members`, {
-    method: 'POST',
-    token,
-    query: { type: 'bitable' },
-    body: {
-      member_type: 'openid',
-      member_id: ownerOpenId,
-      perm: 'full_access',
-      type: 'user'
-    }
-  });
-}
-
-async function transferOwner(token, appToken) {
-  return feishuRequest(`/open-apis/drive/v1/permissions/${encodeURIComponent(appToken)}/members/transfer_owner`, {
-    method: 'POST',
-    token,
-    query: {
-      type: 'bitable',
-      remove_old_owner: 'false',
-      old_owner_perm: 'full_access'
-    },
-    body: {
-      member_type: 'openid',
-      member_id: ownerOpenId
-    }
-  });
 }
 
 async function openInternetReadable(token, appToken) {

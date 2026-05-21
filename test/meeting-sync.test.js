@@ -268,7 +268,7 @@ test('buildMeetingFromRecordingSync updates the matched reserve record', () => {
       actions: [],
       artifacts: []
     },
-    defaultOwnerId: 'ou_default'
+    ownerId: 'ou_default'
   });
 
   assert.equal(meeting.reserveId, 'reserve_123');
@@ -278,6 +278,27 @@ test('buildMeetingFromRecordingSync updates the matched reserve record', () => {
   assert.equal(meeting.url, 'https://vc.feishu.cn/j/123456789');
   assert.equal(meeting.ownerId, 'ou_owner');
   assert.equal(meeting.minuteToken, 'minute_token_123');
+});
+
+test('recording sync does not invent a fixed owner without SSO or existing owner', () => {
+  const meeting = buildMeetingFromRecordingSync({
+    event: {
+      meetingNo: '123456789',
+      minuteToken: 'minute_token_123',
+      minuteUrl: 'https://meetings.feishu.cn/minutes/minute_token_123'
+    },
+    recordKey: 'reserve_123',
+    summary: {
+      source: 'FEISHU_MINUTES',
+      title: '客户方案演示会议纪要',
+      duration: 0,
+      highlights: [],
+      actions: [],
+      artifacts: []
+    }
+  });
+
+  assert.equal(meeting.ownerId, '');
 });
 
 test('normalizeFeishuEvent extracts recording_ready payload from v2 event body', () => {

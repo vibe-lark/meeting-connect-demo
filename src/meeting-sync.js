@@ -358,7 +358,7 @@ function normalizeAiArtifactMarkers(artifacts = {}) {
   return markers;
 }
 
-export function buildMeetingFromRecordingSync({ event, recordKey, existingRecord = null, existingMeeting = null, minute = {}, summary, defaultOwnerId }) {
+export function buildMeetingFromRecordingSync({ event, recordKey, existingRecord = null, existingMeeting = null, minute = {}, summary, ownerId = '' }) {
   return {
     ...(existingMeeting || {}),
     id: existingMeeting?.id || recordKey,
@@ -374,7 +374,7 @@ export function buildMeetingFromRecordingSync({ event, recordKey, existingRecord
     status: 'SUMMARY_READY',
     createdAt: existingRecord?.createdAt || existingMeeting?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    ownerId: existingRecord?.ownerId || existingMeeting?.ownerId || defaultOwnerId,
+    ownerId: existingRecord?.ownerId || existingMeeting?.ownerId || ownerId,
     ownerName: existingRecord?.ownerName || existingMeeting?.ownerName || '',
     minuteToken: event.minuteToken,
     minuteUrl: event.minuteUrl,

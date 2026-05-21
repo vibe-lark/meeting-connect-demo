@@ -25,8 +25,8 @@ The Feishu OpenID of the current SSO-authenticated user. The self-built business
 _Avoid_: fixed owner in the page, event receiver OpenID, tenant token identity, mandatory identity comparison
 
 **Authenticated meeting creation**:
-The product rule that a Feishu meeting can only be created after SSO login has resolved the **meeting owner identity**. The fixed owner configuration is only a development fallback and must not be used by the page's primary create-meeting flow.
-_Avoid_: anonymous meeting creation, config-driven page owner
+The product rule that a Feishu meeting can only be created after SSO login has resolved the **meeting owner identity**. The page does not support a configured fixed owner.
+_Avoid_: anonymous meeting creation, config-driven page owner, fixed owner fallback
 
 **Meeting event receiver**:
 The Feishu application callback that receives meeting lifecycle events such as recording-ready. Event receiving is an application capability and should not be described as using a specific user OpenID.

@@ -127,7 +127,7 @@ test('frontend summary panel labels fallback-only summaries as pending artifacts
 test('frontend oauth badge uses specific permission copy when minutes permissions are missing', () => {
   const state = getOAuthDisplayState({
     authenticated: true,
-    openId: 'ou_8fae58c6480696bebd6418da213ecde8',
+    openId: 'ou_test_user',
     name: '张三',
     updatedAt: '2026-05-20T21:43:29.569Z',
     permissionWarning: { message: 'Missing scopes: minutes:minutes.basic:read' }

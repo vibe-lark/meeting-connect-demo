@@ -36,7 +36,6 @@ import {
 const app = express();
 const port = Number(process.env.PORT || 3107);
 const feishuBaseUrl = process.env.FEISHU_BASE_URL || 'https://open.feishu.cn';
-const defaultOwnerId = process.env.FEISHU_OWNER_ID || 'ou_8fae58c6480696bebd6418da213ecde8';
 const dataDir = path.resolve('data');
 const recordsPath = path.join(dataDir, 'meeting-records.json');
 const eventLogPath = path.join(dataDir, 'feishu-event-log.json');
@@ -128,8 +127,6 @@ app.get('/api/config/status', (req, res) => {
   res.json({
     hasAppId: Boolean(process.env.FEISHU_APP_ID),
     hasAppSecret: Boolean(process.env.FEISHU_APP_SECRET),
-    hasDefaultOwnerId: Boolean(defaultOwnerId),
-    ownerId: defaultOwnerId,
     userIdType: process.env.FEISHU_USER_ID_TYPE || 'open_id',
     tableStorage: bitableConfig.appToken && bitableConfig.tableId ? 'FEISHU_BITABLE' : 'LOCAL_FALLBACK_CACHE',
     baseUrl: bitableConfig.url,
@@ -842,7 +839,7 @@ async function syncRecordingReadyEvent(event, { ownerId = '' } = {}) {
     existingMeeting,
     minute,
     summary,
-    defaultOwnerId: effectiveOwnerId || defaultOwnerId
+    ownerId: effectiveOwnerId
   });
 
   meetings.set(recordKey, meeting);
@@ -941,7 +938,7 @@ async function ensureRecordingPermission(meetingId, ownerId = '') {
     body: {
       permission_objects: [
         {
-          id: ownerId || defaultOwnerId,
+          id: ownerId,
           type: 1,
           permission: 1
         }
@@ -1038,7 +1035,7 @@ async function saveMeetingRecord(meeting, tenantToken) {
     meetingNo: meeting.meetingNo || '',
     meetingUrl: meeting.url || meeting.appLink || '',
     password: meeting.password || '',
-    ownerId: meeting.ownerId || existing?.ownerId || defaultOwnerId,
+    ownerId: meeting.ownerId || existing?.ownerId || '',
     ownerName: meeting.ownerName || existing?.ownerName || '',
     endTime: meeting.endTime || '',
     meetingId: meeting.meetingId || existing?.meetingId || '',

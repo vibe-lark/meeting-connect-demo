@@ -51,7 +51,7 @@
 
 - 公开 Demo：`https://meeting-connect.dev.solutionsuite.cn` 可访问。
 - `/api/feishu/oauth/status` 可用于确认当前浏览器 session 的 SSO 授权状态和最近一次回调结果。
-- `/api/feishu/oauth/status` 返回当前 SSO 用户 `ou_8fae58c6480696bebd6418da213ecde8`，`authenticated=true`，`authorized=true`，`canRefresh=true`。
+- `/api/feishu/oauth/status` 返回当前 SSO 用户，`authenticated=true`，`authorized=true`，`canRefresh=true`。
 - `npm test`：32/32 passing。
 - `npm run check:permissions`：`/open-apis/minutes/v1/minutes/:minute_token` 仍返回飞书 `99991679`，缺少 `minutes:minutes.basic:read`；`/artifacts` 可访问但没有可验收 AI summary/chapter/todo 内容。
 - `npm run audit:completion`：仍失败 `飞书妙记用户权限可读取` 和 `Base 同一条记录已写入纪要字段`。

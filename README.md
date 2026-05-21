@@ -85,7 +85,6 @@ npm run dev
 ```bash
 FEISHU_APP_ID=cli_xxxxxxxxxxxxxxxx
 FEISHU_APP_SECRET=replace_with_app_secret
-FEISHU_OWNER_ID=ou_8fae58c6480696bebd6418da213ecde8
 FEISHU_USER_ID_TYPE=open_id
 ```
 
@@ -97,7 +96,7 @@ FEISHU_ENCRYPT_KEY=replace_with_encrypt_key
 
 如果没有开启 Encrypt Key，可以保持为空；回调接口同时支持明文事件和加密事件。
 
-页面主流程使用飞书 SSO 当前用户作为会议 Owner。`FEISHU_OWNER_ID` 仅作为脚本和本地兜底配置，不是页面创建会议的主路径。
+页面主流程使用飞书 SSO 当前用户作为会议 Owner，未登录时不能发起会议。
 
 服务端读取妙记 AI 产物和智能纪要时，优先使用页面“飞书 SSO 登录”保存的 refreshable user token，不要求现场手动填写 `user_access_token`。
 
@@ -205,8 +204,7 @@ npm run bootstrap:base
 
 1. 创建一个 Feishu Base。
 2. 创建会议记录所需字段。
-3. 给配置的 Base 管理 Open ID 添加管理权限，仅作为 Base 初始化和维护兜底，不参与页面会议 Owner 选择。
-4. 设置互联网获得链接的人可阅读。
+3. 设置互联网获得链接的人可阅读。
 5. 保存运行态配置到：
 
 ```text
