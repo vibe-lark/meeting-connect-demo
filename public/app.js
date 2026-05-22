@@ -570,12 +570,12 @@ function minuteUrlFrom(record = {}) {
 }
 
 function smartNoteUrlFrom(record = {}) {
-  const artifact = (record.artifacts || []).find((item) => ['纪要文档', '飞书文档'].includes(item?.type) && item.docToken);
+  const artifact = (record.artifacts || []).find((item) => ['智能纪要文档', '纪要文档', '飞书文档'].includes(item?.type) && item.docToken);
   if (artifact?.docToken) {
     const origin = latestConfig?.baseUrl ? new URL(latestConfig.baseUrl).origin : 'https://feishu.cn';
     return `${origin}/docx/${encodeURIComponent(artifact.docToken)}`;
   }
-  return minuteUrlFrom(record);
+  return '';
 }
 
 function formatTime(value) {

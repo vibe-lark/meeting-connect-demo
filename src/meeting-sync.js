@@ -133,9 +133,10 @@ export function hasVerifiedMinutesSummary(record = {}) {
   if (hasSyncWarning) return false;
 
   const hasAiArtifact = record.artifacts.some((item) => item?.type === 'AI产物' || item?.type === '智能纪要');
+  const hasSmartNoteDocument = record.artifacts.some((item) => ['智能纪要文档', '纪要文档', '飞书文档'].includes(item?.type) && item.docToken);
   const hasRealHighlight = record.highlights.some((item) => item && item !== DEFAULT_SUMMARY_HIGHLIGHT);
   const hasRealAction = Array.isArray(record.actions) && record.actions.some((item) => item && item !== DEFAULT_SUMMARY_ACTION);
-  return hasAiArtifact && (hasRealHighlight || hasRealAction);
+  return hasSmartNoteDocument && hasAiArtifact && (hasRealHighlight || hasRealAction);
 }
 
 export function findLatestMinutesSyncCandidate(records = []) {
@@ -331,11 +332,11 @@ export function getRecordMinuteUrl(record = {}) {
 
 export function getRecordSmartNoteUrl(record = {}, { baseUrl = '' } = {}) {
   const artifacts = Array.isArray(record.artifacts) ? record.artifacts : [];
-  const docArtifact = artifacts.find((item) => ['纪要文档', '飞书文档'].includes(item?.type) && item.docToken);
+  const docArtifact = artifacts.find((item) => ['智能纪要文档', '纪要文档', '飞书文档'].includes(item?.type) && item.docToken);
   if (docArtifact?.docToken) {
     return buildFeishuDocUrl(docArtifact.docToken, baseUrl);
   }
-  return getRecordMinuteUrl(record);
+  return '';
 }
 
 export function buildFeishuDocUrl(docToken = '', baseUrl = '') {
@@ -425,7 +426,7 @@ function normalizeNoteArtifacts(artifacts) {
   if (!Array.isArray(artifacts)) return [];
   return artifacts.map((item) => {
     const normalized = {
-      type: item.artifact_type === 1 ? '纪要文档' : item.artifact_type === 2 ? '逐字稿文档' : '飞书文档',
+      type: item.artifact_type === 1 ? '智能纪要文档' : item.artifact_type === 2 ? '逐字稿文档' : '飞书文档',
       docToken: item.doc_token || item.docToken || ''
     };
     const createTime = item.create_time || item.createTime || '';

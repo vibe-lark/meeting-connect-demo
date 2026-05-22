@@ -7,9 +7,10 @@ export function isVerifiedRecordSummary(record = {}) {
   if (!record.summaryTitle || !Array.isArray(record.highlights) || !Array.isArray(record.artifacts)) return false;
   const hasWarning = record.artifacts.some((item) => item?.type === '同步提示');
   const hasAiArtifact = record.artifacts.some((item) => item?.type === 'AI产物' || item?.type === '智能纪要');
+  const hasSmartNoteDocument = record.artifacts.some((item) => ['智能纪要文档', '纪要文档', '飞书文档'].includes(item?.type) && item.docToken);
   const hasRealHighlight = record.highlights.some((item) => item && item !== DEFAULT_SUMMARY_HIGHLIGHT);
   const hasRealAction = Array.isArray(record.actions) && record.actions.some((item) => item && item !== DEFAULT_SUMMARY_ACTION);
-  return !hasWarning && hasAiArtifact && (hasRealHighlight || hasRealAction);
+  return !hasWarning && hasSmartNoteDocument && hasAiArtifact && (hasRealHighlight || hasRealAction);
 }
 
 export function hasMinuteLink(record = {}) {

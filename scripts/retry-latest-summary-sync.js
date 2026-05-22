@@ -22,7 +22,7 @@ async function main() {
     if (hasSyncWarning) {
       throw new Error('最近一次同步仍包含 Minutes 同步提示，请重新完成 SSO 授权后运行 npm run check:permissions。');
     }
-    throw new Error('最近一次同步仍不是可验证的 Minutes AI 产物；如果 artifacts 为空，请等待飞书生成 AI 产物或重新生成一场有实际语音内容的新会议。');
+    throw new Error('最近一次同步仍没有可验证的智能纪要文档；请确认会议已开启智能纪要，并等待飞书生成以“智能纪要”开头的文档。');
   }
 }
 

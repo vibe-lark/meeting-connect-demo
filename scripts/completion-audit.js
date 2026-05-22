@@ -77,13 +77,13 @@ async function main() {
       console.error(`登录入口：${baseUrl}`);
       console.error(`授权后运行：npm run check:permissions && npm run retry:summary && npm run audit:completion`);
     } else if (fallbackOnlySummary) {
-      console.error(`\n纪要字段仍是兜底结果：当前记录没有可验证的 Minutes AI 产物，或包含同步提示。`);
+      console.error(`\n纪要字段仍未完成：当前记录没有可验证的智能纪要文档 doc_token，或包含同步提示。`);
       if (hasMissingBasicReadWarning) {
         console.error(`当前记录包含 minutes:minutes.basic:read 缺失提示，请重新完成 SSO 授权。`);
       } else {
-        console.error(`如果 /artifacts 可访问但为空，请等待飞书生成 AI summary/chapter/todo，或重新生成一场有实际语音内容的新会议。`);
+        console.error(`如果已经拿到妙记但没有智能纪要文档，请确认会议里已开启智能纪要，并等待飞书生成以“智能纪要”开头的文档。`);
       }
-      console.error(`请确认用户授权包含 minutes:minutes.basic:read 和 minutes:minutes.artifacts:read。`);
+      console.error(`请确认用户授权包含 minutes:minutes.basic:read、minutes:minutes.artifacts:read 和 vc:note:read。`);
       console.error(`重新授权入口：${baseUrl}/api/feishu/oauth/start`);
       console.error(`授权后运行：npm run check:permissions && npm run retry:summary && npm run audit:completion`);
     } else if (!oauth.authorized && !oauth.canRefresh) {

@@ -47,7 +47,9 @@ test('frontend status marks summary complete only for verified minutes artifacts
     highlights: ['客户确认下一步需要评估自研页面接入方式。'],
     actions: ['整理 Demo 验收材料'],
     artifacts: [
-      { type: 'AI产物', kind: 'summary' }
+      { type: '智能纪要', noteId: 'note_demo' },
+      { type: 'AI产物', kind: 'summary' },
+      { type: '智能纪要文档', docToken: 'doc_summary' }
     ]
   };
 
@@ -56,6 +58,23 @@ test('frontend status marks summary complete only for verified minutes artifacts
     status: 'ok',
     text: '纪要已回写'
   });
+});
+
+test('frontend keeps records pending when the smart note document is missing', () => {
+  const record = {
+    status: 'SUMMARY_READY',
+    bitableSyncStatus: 'SYNCED',
+    summaryTitle: '客户方案演示会议',
+    highlights: ['客户确认下一步需要评估自研页面接入方式。'],
+    actions: ['整理 Demo 验收材料'],
+    artifacts: [
+      { type: '智能纪要', noteId: 'note_demo' },
+      { type: 'AI产物', kind: 'summary' }
+    ]
+  };
+
+  assert.equal(isVerifiedRecordSummary(record), false);
+  assert.equal(getRecordStatusText(record), '等待智能纪要');
 });
 
 test('frontend exposes a minutes link even when smart notes are still pending', () => {

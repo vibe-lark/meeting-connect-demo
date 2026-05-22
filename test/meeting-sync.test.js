@@ -448,7 +448,7 @@ test('buildSummaryFromMinutes maps minute info, AI artifacts, and note artifacts
     { type: 'AI产物', kind: 'summary' },
     { type: 'AI产物', kind: 'chapters' },
     { type: 'AI产物', kind: 'todos' },
-    { type: '纪要文档', docToken: 'doc_summary' },
+    { type: '智能纪要文档', docToken: 'doc_summary' },
     { type: '逐字稿文档', docToken: 'doc_transcript' }
   ]);
 });
@@ -458,7 +458,7 @@ test('record links expose minutes and smart note links for the demo Base', () =>
     minuteToken: 'minute_token_123',
     artifacts: [
       { type: '妙记', url: 'https://meetings.feishu.cn/minutes/minute_token_123', token: 'minute_token_123' },
-      { type: '纪要文档', docToken: 'doc_summary' }
+      { type: '智能纪要文档', docToken: 'doc_summary' }
     ]
   };
 
@@ -468,6 +468,18 @@ test('record links expose minutes and smart note links for the demo Base', () =>
     'https://digitalsolution.feishu.cn/docx/doc_summary'
   );
   assert.equal(buildFeishuDocUrl('doc_summary', 'https://digitalsolution.feishu.cn/base/app_token'), 'https://digitalsolution.feishu.cn/docx/doc_summary');
+});
+
+test('smart note links do not fall back to the Feishu minutes page', () => {
+  const record = {
+    minuteToken: 'minute_token_123',
+    artifacts: [
+      { type: '妙记', url: 'https://meetings.feishu.cn/minutes/minute_token_123', token: 'minute_token_123' }
+    ]
+  };
+
+  assert.equal(getRecordMinuteUrl(record), 'https://meetings.feishu.cn/minutes/minute_token_123');
+  assert.equal(getRecordSmartNoteUrl(record, { baseUrl: 'https://digitalsolution.feishu.cn/base/app_token' }), '');
 });
 
 test('buildSummaryFromMinutes maps documented Feishu artifacts fields', () => {
@@ -540,10 +552,24 @@ test('hasVerifiedMinutesSummary rejects fallback-only summaries and sync warning
     highlights: ['客户确认下周进入 PoC。'],
     artifacts: [
       { type: '妙记', token: 'obcn_demo' },
-      { type: 'AI产物', kind: 'summary' }
+      { type: '智能纪要', noteId: 'note_demo' },
+      { type: 'AI产物', kind: 'summary' },
+      { type: '智能纪要文档', docToken: 'doc_summary' }
     ],
     bitableSyncStatus: 'SYNCED'
   }), true);
+
+  assert.equal(hasVerifiedMinutesSummary({
+    status: 'SUMMARY_READY',
+    summaryTitle: '客户方案演示纪要',
+    highlights: ['客户确认下周进入 PoC。'],
+    artifacts: [
+      { type: '妙记', token: 'obcn_demo' },
+      { type: '智能纪要', noteId: 'note_demo' },
+      { type: 'AI产物', kind: 'summary' }
+    ],
+    bitableSyncStatus: 'SYNCED'
+  }), false);
 });
 
 test('findLatestMinutesSyncCandidate ignores older fallback records with permission warnings', () => {

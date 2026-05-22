@@ -1216,7 +1216,7 @@ async function getRealNoteSummary(noteId, userAccessToken) {
     creatorId: note.creator_id,
     createTime: note.create_time,
     artifacts: (note.artifacts || []).map((item) => ({
-      type: item.artifact_type === 1 ? '纪要文档' : item.artifact_type === 2 ? '逐字稿文档' : '未知产物',
+      type: item.artifact_type === 1 ? '智能纪要文档' : item.artifact_type === 2 ? '逐字稿文档' : '未知产物',
       docToken: item.doc_token,
       createTime: item.create_time
     })),
