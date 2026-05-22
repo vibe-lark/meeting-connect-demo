@@ -10,11 +10,9 @@ import {
 } from './status-logic.js';
 
 const meetingForm = document.querySelector('#meetingForm');
-const summaryForm = document.querySelector('#summaryForm');
 const meetingState = document.querySelector('#meetingState');
 const summaryState = document.querySelector('#summaryState');
 const refreshButton = document.querySelector('#refreshButton');
-const syncButton = document.querySelector('#syncButton');
 const createButton = document.querySelector('#createButton');
 const reloadRecordsButton = document.querySelector('#reloadRecordsButton');
 const recordsBody = document.querySelector('#recordsBody');
@@ -91,53 +89,11 @@ refreshButton.addEventListener('click', async () => {
   }
 });
 
-summaryForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  if (!currentAuth.authenticated) {
-    showToast('请先登录飞书，再同步纪要。', true);
-    return;
-  }
-  if (!currentMeeting?.reserveId) return;
-  syncButton.disabled = true;
-  syncButton.textContent = '同步中';
-  try {
-    const form = new FormData(summaryForm);
-    const payload = {
-      minuteUrl: String(form.get('minuteUrl') || '').trim() || undefined,
-      noteId: String(form.get('noteId') || '').trim() || undefined
-    };
-    const data = await api(`/api/meetings/${encodeURIComponent(currentMeeting.reserveId)}/sync-summary`, {
-      method: 'POST',
-      body: payload
-    });
-    setMeeting(data.meeting);
-    await loadRecords();
-    showToast('纪要已同步并更新数据表。');
-  } catch (error) {
-    showToast(error.message, true);
-  } finally {
-    syncButton.disabled = false;
-    syncButton.textContent = '同步纪要到数据表';
-  }
-});
-
 reloadRecordsButton.addEventListener('click', loadRecords);
 reloadEventsButton.addEventListener('click', loadEvents);
 retrySummaryButton.addEventListener('click', retryLatestSummary);
 oauthButton.addEventListener('click', startOAuthLogin);
 if (oauthInlineButton) oauthInlineButton.addEventListener('click', startOAuthLogin);
-recordsBody.addEventListener('click', (event) => {
-  const button = event.target.closest('[data-use-record]');
-  if (!button) return;
-  if (!currentAuth.authenticated) {
-    showToast('请先登录飞书，再查看演示数据。', true);
-    return;
-  }
-  const record = latestRecords.find((item) => item.reserveId === button.dataset.useRecord);
-  if (!record) return;
-  setMeeting(meetingFromRecord(record));
-  showToast('已切换为当前会议，可继续同步纪要。');
-});
 
 if (new URLSearchParams(location.search).get('feishu_auth') === 'success') {
   history.replaceState({}, '', location.pathname);
@@ -190,6 +146,7 @@ async function loadConfigStatus() {
       baseLink.hidden = false;
       baseLink.href = status.baseUrl;
     }
+    if (latestRecords.length) renderRecords(latestRecords);
     updateBaseStep(status);
   } catch {}
 }
@@ -239,7 +196,6 @@ function applyLoginGate() {
   const disabled = !currentAuth.authenticated;
   createButton.disabled = disabled;
   refreshButton.disabled = disabled || !currentMeeting?.reserveId;
-  syncButton.disabled = disabled || !currentMeeting?.reserveId;
   reloadRecordsButton.disabled = disabled;
   reloadEventsButton.disabled = disabled;
   retrySummaryButton.disabled = disabled;
@@ -357,7 +313,7 @@ function renderRecords(records) {
       <td data-label="纪要">${summaryCell(record)}</td>
       <td data-label="数据表同步">${syncPill(record.bitableSyncStatus)}</td>
       <td data-label="更新时间">${escapeHtml(formatTime(record.updatedAt))}</td>
-      <td data-label="查看"><button class="table-action" type="button" data-use-record="${escapeAttribute(record.reserveId)}">查看</button></td>
+      <td data-label="查看"><a class="table-action" href="${escapeAttribute(latestConfig?.baseUrl || '#')}" target="_blank" rel="noreferrer" aria-disabled="${latestConfig?.baseUrl ? 'false' : 'true'}">查看</a></td>
     </tr>
   `).join('');
 }
@@ -539,9 +495,9 @@ function syncPill(status) {
   const map = {
     SYNCED: ['ok', '已写入数据表'],
     FAILED: ['warn', '数据表同步失败'],
-    LOCAL_SAVED: ['info', '本地兜底缓存']
+    LOCAL_SAVED: ['info', '待写入数据表']
   };
-  const [cls, text] = map[status] || ['info', '本地兜底缓存'];
+  const [cls, text] = map[status] || ['info', '待写入数据表'];
   return `<span class="pill ${cls}">${escapeHtml(text)}</span>`;
 }
 

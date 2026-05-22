@@ -154,30 +154,13 @@
 
         <details class="panel table-panel technical-panel" aria-labelledby="event-title">
           <summary>
-            <span>技术验收</span>
-            <small>事件接收、妙记解析和表格写入</small>
+            <span>日志事件</span>
+            <small>查看飞书事件和同步日志</small>
           </summary>
-          <div class="manual-sync">
-            <div>
-              <h2>手动补同步</h2>
-              <p>仅用于事件延迟时排查。客户演示时可以保持折叠。</p>
-            </div>
-            <form id="summaryForm" class="summary-form">
-              <label>
-                <span>飞书妙记链接或 token</span>
-                <input id="minuteUrl" name="minuteUrl" placeholder="事件延迟时粘贴真实妙记链接" />
-              </label>
-              <label>
-                <span>智能纪要 note_id</span>
-                <input id="noteId" name="noteId" placeholder="可选；必须是真实 note_id" />
-              </label>
-              <button id="syncButton" class="secondary" type="submit" disabled>同步纪要到数据表</button>
-            </form>
-          </div>
           <div class="panel-head compact">
             <div>
-              <h2 id="event-title">飞书事件状态</h2>
-              <p>用于确认会议结束后飞书是否推送 recording_ready，以及同步是否成功。</p>
+              <h2 id="event-title">飞书事件日志</h2>
+              <p>用于确认会议结束后飞书是否推送事件，以及系统是否完成同步。</p>
             </div>
             <div class="panel-actions">
               <button id="retrySummaryButton" class="secondary" type="button">重试最近同步</button>

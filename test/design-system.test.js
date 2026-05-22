@@ -69,10 +69,26 @@ test('meeting table copy guides users to the demo Base instead of exposing summa
 
   assert.match(app, /去数据表查看/);
   assert.match(app, /打开会议/);
+  assert.match(app, /data-label="查看"><a class="table-action"/);
+  assert.match(app, /href="\$\{escapeAttribute\(latestConfig\?\.baseUrl \|\| '#'\)\}"/);
+  assert.match(app, /if \(latestRecords\.length\) renderRecords\(latestRecords\)/);
   assert.doesNotMatch(app, /<strong>关键结论<\/strong>/);
   assert.doesNotMatch(app, /<strong>待办事项<\/strong>/);
   assert.doesNotMatch(app, />处理</);
+  assert.doesNotMatch(app, /data-use-record/);
   assert.match(html, /<th>查看<\/th>/);
+});
+
+test('technical log section uses event-log wording and removes manual sync form', async () => {
+  const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
+  const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
+
+  assert.match(html, /<span>日志事件<\/span>/);
+  assert.match(html, /<small>查看飞书事件和同步日志<\/small>/);
+  assert.doesNotMatch(html, /手动补同步|summaryForm|minuteUrl|noteId|syncButton/);
+  assert.doesNotMatch(app, /summaryForm|syncButton|sync-summary|同步纪要到数据表/);
+  assert.match(app, /LOCAL_SAVED: \['info', '待写入数据表'\]/);
+  assert.doesNotMatch(app, /本地兜底缓存/);
 });
 
 test('page disables demo actions until Feishu login is confirmed', async () => {
