@@ -1,5 +1,6 @@
 const DEFAULT_SUMMARY_HIGHLIGHT = '飞书妙记已生成，系统已完成自动同步。';
 const DEFAULT_SUMMARY_ACTION = '打开飞书妙记查看完整纪要和后续行动项。';
+const NO_SMART_NOTE_TEXT = '无智能纪要';
 
 export function isVerifiedRecordSummary(record = {}) {
   if (!record) return false;
@@ -19,9 +20,17 @@ export function hasMinuteLink(record = {}) {
     && record.artifacts.some((item) => item?.type === '妙记' && (item.url || item.token));
 }
 
+export function hasNoSmartNote(record = {}) {
+  return Array.isArray(record?.artifacts)
+    && record.artifacts.some((item) => item?.type === NO_SMART_NOTE_TEXT);
+}
+
 export function getSummaryStepState({ latestRecord = null, recordingEvent = null } = {}) {
   if (isVerifiedRecordSummary(latestRecord)) {
     return { status: 'ok', text: '纪要已回写' };
+  }
+  if (hasNoSmartNote(latestRecord)) {
+    return { status: 'warn', text: NO_SMART_NOTE_TEXT };
   }
   if (latestRecord?.status === 'SUMMARY_READY') {
     return { status: 'warn', text: '等待智能纪要' };
@@ -48,6 +57,13 @@ export function getSummaryDisplayState(record = {}) {
       description: ''
     };
   }
+  if (hasNoSmartNote(record)) {
+    return {
+      verified: false,
+      title: NO_SMART_NOTE_TEXT,
+      description: '飞书妙记已生成，但本次会议没有智能纪要内容。'
+    };
+  }
   return {
     verified: false,
     title: '已拿到妙记，等待智能纪要',
@@ -58,6 +74,9 @@ export function getSummaryDisplayState(record = {}) {
 export function getRecordStatusText(recordOrStatus) {
   const record = typeof recordOrStatus === 'object' ? recordOrStatus : null;
   const status = record ? record.status : recordOrStatus;
+  if (record && hasNoSmartNote(record)) {
+    return NO_SMART_NOTE_TEXT;
+  }
   if (status === 'SUMMARY_READY' && record && !isVerifiedRecordSummary(record)) {
     return '等待智能纪要';
   }

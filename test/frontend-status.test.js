@@ -77,6 +77,32 @@ test('frontend keeps records pending when the smart note document is missing', (
   assert.equal(getRecordStatusText(record), '等待智能纪要');
 });
 
+test('frontend status returns no smart note when sync confirmed no AI artifacts', () => {
+  const record = {
+    status: 'SUMMARY_READY',
+    bitableSyncStatus: 'SYNCED',
+    summaryTitle: '无智能纪要',
+    highlights: ['无智能纪要'],
+    actions: [],
+    artifacts: [
+      { type: '妙记', token: 'obcn_no_note' },
+      { type: '无智能纪要' }
+    ]
+  };
+
+  assert.equal(isVerifiedRecordSummary(record), false);
+  assert.deepEqual(getSummaryStepState({ latestRecord: record }), {
+    status: 'warn',
+    text: '无智能纪要'
+  });
+  assert.deepEqual(getSummaryDisplayState(record), {
+    verified: false,
+    title: '无智能纪要',
+    description: '飞书妙记已生成，但本次会议没有智能纪要内容。'
+  });
+  assert.equal(getRecordStatusText(record), '无智能纪要');
+});
+
 test('frontend exposes a minutes link even when smart notes are still pending', () => {
   assert.equal(hasMinuteLink({
     status: 'SUMMARY_READY',

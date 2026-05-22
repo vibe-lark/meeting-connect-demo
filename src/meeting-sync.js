@@ -11,6 +11,7 @@ export const DEFAULT_OAUTH_SCOPE = [
 
 export const DEFAULT_SUMMARY_HIGHLIGHT = '飞书妙记已生成，系统已完成自动同步。';
 export const DEFAULT_SUMMARY_ACTION = '打开飞书妙记查看完整纪要和后续行动项。';
+export const NO_SMART_NOTE_TEXT = '无智能纪要';
 
 export function buildFeishuOAuthAuthorizeUrl({ appId, redirectUri, state, scope = DEFAULT_OAUTH_SCOPE, baseUrl = 'https://accounts.feishu.cn' }) {
   const url = new URL('/open-apis/authen/v1/authorize', baseUrl);
@@ -137,6 +138,11 @@ export function hasVerifiedMinutesSummary(record = {}) {
   const hasRealHighlight = record.highlights.some((item) => item && item !== DEFAULT_SUMMARY_HIGHLIGHT);
   const hasRealAction = Array.isArray(record.actions) && record.actions.some((item) => item && item !== DEFAULT_SUMMARY_ACTION);
   return hasSmartNoteDocument && hasAiArtifact && (hasRealHighlight || hasRealAction);
+}
+
+export function hasNoSmartNote(record = {}) {
+  return Array.isArray(record?.artifacts)
+    && record.artifacts.some((item) => item?.type === NO_SMART_NOTE_TEXT);
 }
 
 export function findLatestMinutesSyncCandidate(records = []) {
@@ -300,23 +306,29 @@ export function buildSummaryFromMinutes({ minute = {}, artifacts = {}, note = nu
   const actions = uniqueNonEmpty(normalizeTodoItems(artifacts.minute_todos || artifacts.todos));
   const noteArtifacts = normalizeNoteArtifacts(note?.artifacts || []);
   const aiArtifacts = normalizeAiArtifactMarkers(artifacts);
+  const noSmartNote = Boolean(minuteUrl)
+    && !noteWarning
+    && !noteId
+    && aiArtifacts.length === 0
+    && !noteArtifacts.some((item) => item.type === '智能纪要文档');
   const artifactsList = [
     minuteUrl ? { type: '妙记', url: minuteUrl, token: minuteToken } : null,
     noteId ? { type: '智能纪要', noteId } : null,
     ...aiArtifacts,
     ...noteArtifacts,
+    noSmartNote ? { type: NO_SMART_NOTE_TEXT } : null,
     noteWarning ? { type: '同步提示', message: noteWarning } : null
   ].filter(Boolean);
 
   return {
     source: 'FEISHU_MINUTES',
-    title: minute.title || minute.topic || '飞书妙记已同步',
+    title: noSmartNote ? NO_SMART_NOTE_TEXT : minute.title || minute.topic || '飞书妙记已同步',
     syncedAt: new Date().toISOString(),
     minuteToken,
     noteId,
     duration: Number(minute.duration || artifacts.duration || 0),
-    highlights: highlights.length ? highlights : [DEFAULT_SUMMARY_HIGHLIGHT],
-    actions: actions.length ? actions : [DEFAULT_SUMMARY_ACTION],
+    highlights: noSmartNote ? [NO_SMART_NOTE_TEXT] : highlights.length ? highlights : [DEFAULT_SUMMARY_HIGHLIGHT],
+    actions: noSmartNote ? [] : actions.length ? actions : [DEFAULT_SUMMARY_ACTION],
     artifacts: artifactsList,
     references: normalizeReferences(note?.references || [])
   };

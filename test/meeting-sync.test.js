@@ -516,6 +516,35 @@ test('buildSummaryFromMinutes maps documented Feishu artifacts fields', () => {
   assert.deepEqual(summary.actions, ['提交资源保障方案 - 张三']);
 });
 
+test('buildSummaryFromMinutes returns no smart note when Feishu minutes has no AI artifacts', () => {
+  const summary = buildSummaryFromMinutes({
+    minute: {
+      title: '无智能纪要会议',
+      url: 'https://meetings.feishu.cn/minutes/obcn_no_note'
+    },
+    artifacts: {
+      summary: [],
+      minute_chapters: [],
+      minute_todos: []
+    },
+    note: null,
+    minuteToken: 'obcn_no_note',
+    noteWarning: ''
+  });
+
+  assert.equal(summary.title, '无智能纪要');
+  assert.deepEqual(summary.highlights, ['无智能纪要']);
+  assert.deepEqual(summary.actions, []);
+  assert.deepEqual(summary.artifacts, [
+    {
+      type: '妙记',
+      url: 'https://meetings.feishu.cn/minutes/obcn_no_note',
+      token: 'obcn_no_note'
+    },
+    { type: '无智能纪要' }
+  ]);
+});
+
 test('hasMinutesArtifactsContent distinguishes reachable but empty artifacts payloads', () => {
   assert.equal(hasMinutesArtifactsContent({}), false);
   assert.equal(hasMinutesArtifactsContent({
