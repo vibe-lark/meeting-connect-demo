@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import {
   DEFAULT_OAUTH_SCOPE,
   buildOAuthCallbackDiagnostic,
+  buildRecordFromBitableRecord,
   buildMeetingFromRecordingSync,
   buildFeishuOAuthAuthorizeUrl,
   buildMinutesPermissionAuthUrl,
@@ -468,6 +469,45 @@ test('record links expose minutes and smart note links for the demo Base', () =>
     'https://digitalsolution.feishu.cn/docx/doc_summary'
   );
   assert.equal(buildFeishuDocUrl('doc_summary', 'https://digitalsolution.feishu.cn/base/app_token'), 'https://digitalsolution.feishu.cn/docx/doc_summary');
+});
+
+test('buildRecordFromBitableRecord maps Bitable fields back to meeting records', () => {
+  const record = buildRecordFromBitableRecord({
+    record_id: 'rec_123',
+    fields: {
+      '会议主题': [{ text: '客户方案演示会议' }],
+      '预约ID': 'reserve_123',
+      '会议状态': '纪要已同步',
+      '会议号': '123456789',
+      '会议链接': { text: '打开飞书会议', link: 'https://vc.feishu.cn/j/123456789' },
+      '归属人ID': 'ou_owner',
+      '归属人': '张三',
+      '纪要标题': '客户方案演示纪要',
+      '妙记链接': { text: '打开妙记', link: 'https://meetings.feishu.cn/minutes/minute_token_123' },
+      '关键结论': '确认真实会议闭环\n确认写入多维表格',
+      '待办事项': '补齐演示材料 - 张三',
+      '飞书产物': [
+        { text: '妙记:https://meetings.feishu.cn/minutes/minute_token_123\n' },
+        { text: '智能纪要:note_123\n' },
+        { text: '智能纪要文档:doc_summary' }
+      ],
+      '创建时间': 1760000000000,
+      '更新时间': 1760000300000
+    }
+  });
+
+  assert.equal(record.reserveId, 'reserve_123');
+  assert.equal(record.bitableRecordId, 'rec_123');
+  assert.equal(record.status, 'SUMMARY_READY');
+  assert.equal(record.meetingUrl, 'https://vc.feishu.cn/j/123456789');
+  assert.equal(record.minuteToken, 'minute_token_123');
+  assert.deepEqual(record.highlights, ['确认真实会议闭环', '确认写入多维表格']);
+  assert.deepEqual(record.actions, ['补齐演示材料 - 张三']);
+  assert.deepEqual(record.artifacts, [
+    { type: '妙记', url: 'https://meetings.feishu.cn/minutes/minute_token_123', token: 'minute_token_123' },
+    { type: '智能纪要', noteId: 'note_123' },
+    { type: '智能纪要文档', docToken: 'doc_summary' }
+  ]);
 });
 
 test('smart note links do not fall back to the Feishu minutes page', () => {

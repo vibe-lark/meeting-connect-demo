@@ -12,6 +12,7 @@ import {
   buildMinutesPermissionAuthUrl,
   buildOAuthCallbackDiagnostic,
   buildMeetingFromRecordingSync,
+  buildRecordFromBitableRecord,
   buildRecordingReadyEventFromRecordingPayload,
   buildSessionCookie,
   buildSummaryFromMinutes,
@@ -78,6 +79,7 @@ let appTokenCache = null;
 let userTokenStore = { sessions: {}, users: {} };
 let recordingPollInFlight = false;
 const recordingPollBackoff = new Map();
+let bitableFieldNameCache = null;
 
 app.set('trust proxy', true);
 await loadRecords();
@@ -218,6 +220,7 @@ app.get('/api/feishu/oauth/callback', async (req, res, next) => {
 app.get('/api/records', async (req, res, next) => {
   try {
     const currentUser = await getCurrentFeishuUser(req, { required: true });
+    await refreshRecordsFromStore();
     const userRecords = Array.from(records.values())
       .filter((record) => record.ownerId === currentUser.openId)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -237,6 +240,7 @@ app.get('/api/records', async (req, res, next) => {
 app.get('/api/feishu/events/status', async (req, res, next) => {
   try {
     const currentUser = await getCurrentFeishuUser(req, { required: true });
+    await refreshRecordsFromStore();
     const meetingNos = new Set(Array.from(records.values())
       .filter((record) => record.ownerId === currentUser.openId)
       .map((record) => normalizeMeetingNo(record.meetingNo))
@@ -252,6 +256,7 @@ app.get('/api/feishu/events/status', async (req, res, next) => {
 app.post('/api/feishu/events/retry-latest-summary', async (req, res, next) => {
   try {
     const currentUser = await getCurrentFeishuUser(req, { required: true });
+    await refreshRecordsFromStore();
     const retryEvent = findLatestRetryableRecordingEvent(currentUser.openId);
     if (!retryEvent) {
       return sendError(res, 404, 'RETRYABLE_RECORDING_EVENT_NOT_FOUND', '还没有找到可重试的真实妙记 token。请先结束一场真实会议并等待妙记生成。');
@@ -268,6 +273,32 @@ app.post('/api/feishu/events/retry-latest-summary', async (req, res, next) => {
     });
     res.json({ record, event: retryEvent });
   } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/meetings/:reserveId/sync-recording', async (req, res, next) => {
+  try {
+    const currentUser = await getCurrentFeishuUser(req, { required: true });
+    const record = await getRecordByReserveId(req.params.reserveId);
+    if (!record) {
+      return sendError(res, 404, 'MEETING_RECORD_NOT_FOUND', '多维表格里没有找到这场会议记录。');
+    }
+    if (record.ownerId && record.ownerId !== currentUser.openId) {
+      return sendError(res, 403, 'MEETING_FORBIDDEN', '这场会议不属于当前登录人。');
+    }
+    if (!record.meetingNo) {
+      return sendError(res, 422, 'MEETING_NO_MISSING', '这条会议记录没有会议号，无法拉取会后产物。');
+    }
+
+    const token = await getTenantAccessToken();
+    const event = await buildRecordingReadyEventForRecord(record, token);
+    await appendEventLog({ type: RECORDING_READY_EVENT, status: 'PROCESSING', source: 'MANUAL_PULL', meetingNo: event.meetingNo, minuteToken: event.minuteToken, reserveId: record.reserveId });
+    const syncedRecord = await syncRecordingReadyEvent(event, { ownerId: currentUser.openId });
+    await appendEventLog({ type: RECORDING_READY_EVENT, status: 'SYNCED', source: 'MANUAL_PULL', meetingNo: event.meetingNo, minuteToken: event.minuteToken, reserveId: syncedRecord.reserveId });
+    res.json({ record: syncedRecord, event });
+  } catch (error) {
+    await appendEventLog({ type: RECORDING_READY_EVENT, status: 'FAILED', source: 'MANUAL_PULL', reserveId: req.params.reserveId, error: error.message }).catch(() => {});
     next(error);
   }
 });
@@ -323,6 +354,7 @@ app.post('/api/meetings', async (req, res, next) => {
 app.get('/api/meetings/:reserveId', async (req, res, next) => {
   try {
     const currentUser = await getCurrentFeishuUser(req, { required: true });
+    await refreshRecordsFromStore();
     const cached = meetings.get(req.params.reserveId);
     const cachedRecord = records.get(req.params.reserveId);
     if ((cachedRecord?.ownerId || cached?.ownerId) && (cachedRecord?.ownerId || cached?.ownerId) !== currentUser.openId) {
@@ -360,6 +392,7 @@ app.post('/api/meetings/:reserveId/sync-summary', async (req, res, next) => {
   try {
     const currentUser = await getCurrentFeishuUser(req, { required: true });
     const input = syncSummarySchema.parse(req.body);
+    await refreshRecordsFromStore();
     const existing = meetings.get(req.params.reserveId);
     if (!existing) {
       return sendError(res, 404, 'MEETING_NOT_FOUND', '当前服务内没有找到这场会议，请先发起会议。');
@@ -778,6 +811,7 @@ async function syncRecordingReadyEvent(event, { ownerId = '' } = {}) {
   }
 
   const token = await getTenantAccessToken();
+  await refreshRecordsFromStore(token);
   const recordKey = findRecordKeyForRecordingEvent(records, event) || `event-${event.meetingNo || event.minuteToken}`;
   const existingRecord = records.get(recordKey);
   const existingMeeting = meetings.get(recordKey);
@@ -863,6 +897,7 @@ async function pollRecordings() {
   if (recordingPollInFlight) return;
   recordingPollInFlight = true;
   try {
+    await refreshRecordsFromStore();
     const pendingRecords = Array.from(records.values())
       .filter((record) => record.meetingNo && record.status !== 'SUMMARY_READY')
       .filter((record) => isRecentEnoughForPolling(record));
@@ -881,17 +916,7 @@ async function pollSingleRecording(record, token) {
   if (isPollingBackedOff(record.reserveId)) return;
 
   try {
-    const meetingId = await findMeetingIdByNo(record, token);
-    if (!meetingId) return;
-
-    await ensureRecordingPermission(meetingId, record.ownerId);
-    const recording = await getMeetingRecording(meetingId, token);
-    const event = buildRecordingReadyEventFromRecordingPayload(recording, {
-      meetingId,
-      meetingNo: record.meetingNo,
-      duration: record.duration
-    });
-    if (!event) return;
+    const event = await buildRecordingReadyEventForRecord(record, token);
 
     await appendEventLog({ type: RECORDING_READY_EVENT, status: 'PROCESSING', source: 'POLLING', meetingNo: event.meetingNo, minuteToken: event.minuteToken });
     const syncedRecord = await syncRecordingReadyEvent(event, { ownerId: record.ownerId });
@@ -901,6 +926,25 @@ async function pollSingleRecording(record, token) {
     recordingPollBackoff.set(record.reserveId, Date.now() + 10 * 60 * 1000);
     await appendEventLog({ type: RECORDING_READY_EVENT, status: 'FAILED', source: 'POLLING', meetingNo: record.meetingNo, reserveId: record.reserveId, error: error.message });
   }
+}
+
+async function buildRecordingReadyEventForRecord(record, token) {
+  const meetingId = await findMeetingIdByNo(record, token);
+  if (!meetingId) {
+    throw new FeishuApiError(404, 'MEETING_ID_NOT_FOUND', '没有通过会议号找到对应的飞书会议。');
+  }
+
+  await ensureRecordingPermission(meetingId, record.ownerId);
+  const recording = await getMeetingRecording(meetingId, token);
+  const event = buildRecordingReadyEventFromRecordingPayload(recording, {
+    meetingId,
+    meetingNo: record.meetingNo,
+    duration: record.duration
+  });
+  if (!event) {
+    throw new FeishuApiError(404, 'MINUTES_RECORDING_NOT_FOUND', '已找到会议，但录制里还没有可解析的飞书妙记链接。');
+  }
+  return event;
 }
 
 async function findMeetingIdByNo(record, token) {
@@ -1025,6 +1069,10 @@ async function getNoteDetail(noteId, userAccessToken) {
 }
 
 async function saveMeetingRecord(meeting, tenantToken) {
+  if (!hasBitableStorage()) {
+    throw new FeishuApiError(500, 'BITABLE_NOT_CONFIGURED', '多维表格未配置，无法保存会议记录。');
+  }
+  await refreshRecordsFromStore(tenantToken);
   const now = new Date().toISOString();
   const existing = records.get(meeting.reserveId);
   const record = {
@@ -1054,21 +1102,16 @@ async function saveMeetingRecord(meeting, tenantToken) {
     bitableSyncError: ''
   };
 
-  records.set(record.reserveId, record);
-  await persistRecords();
   await syncRecordToFeishuBitable(record, tenantToken);
   return records.get(record.reserveId);
 }
 
 async function syncRecordToFeishuBitable(record, tenantToken) {
-  if (!bitableConfig.appToken || !bitableConfig.tableId) {
-    return;
-  }
-
   const fields = buildBitableFields(record);
   try {
-    const bitableRecord = record.bitableRecordId
-      ? await feishuRequest(`/open-apis/bitable/v1/apps/${encodeURIComponent(bitableConfig.appToken)}/tables/${encodeURIComponent(bitableConfig.tableId)}/records/${encodeURIComponent(record.bitableRecordId)}`, {
+    const existingBitableRecordId = record.bitableRecordId || await findBitableRecordIdByReserveId(record.reserveId, tenantToken);
+    const bitableRecord = existingBitableRecordId
+      ? await feishuRequest(`/open-apis/bitable/v1/apps/${encodeURIComponent(bitableConfig.appToken)}/tables/${encodeURIComponent(bitableConfig.tableId)}/records/${encodeURIComponent(existingBitableRecordId)}`, {
           method: 'PUT',
           token: tenantToken,
           query: { user_id_type: process.env.FEISHU_USER_ID_TYPE || 'open_id' },
@@ -1088,13 +1131,8 @@ async function syncRecordToFeishuBitable(record, tenantToken) {
       bitableSyncError: ''
     });
   } catch (error) {
-    records.set(record.reserveId, {
-      ...record,
-      bitableSyncStatus: 'FAILED',
-      bitableSyncError: error.message
-    });
+    throw error;
   }
-  await persistRecords();
 }
 
 function buildBitableFields(record) {
@@ -1128,7 +1166,119 @@ function buildOptionalUrlFields(record) {
   };
 }
 
+function hasBitableStorage() {
+  return Boolean(bitableConfig.appToken && bitableConfig.tableId);
+}
+
+async function refreshRecordsFromStore(token = null) {
+  if (!hasBitableStorage()) return;
+  const latestRecords = await listBitableMeetingRecords(token || await getTenantAccessToken());
+  records.clear();
+  meetings.clear();
+  for (const record of latestRecords) {
+    records.set(record.reserveId, record);
+    meetings.set(record.reserveId, meetingFromRecord(record));
+  }
+}
+
+async function listBitableMeetingRecords(token) {
+  const fieldNameById = await getBitableFieldNameMap(token);
+  const items = [];
+  let pageToken = '';
+  do {
+    const data = await feishuRequest(`/open-apis/bitable/v1/apps/${encodeURIComponent(bitableConfig.appToken)}/tables/${encodeURIComponent(bitableConfig.tableId)}/records`, {
+      method: 'GET',
+      token,
+      query: {
+        page_size: '100',
+        text_field_as_array: 'true',
+        ...(pageToken ? { page_token: pageToken } : {}),
+        user_id_type: process.env.FEISHU_USER_ID_TYPE || 'open_id'
+      }
+    });
+    items.push(...(data.items || data.records || []));
+    pageToken = data.page_token || data.next_page_token || '';
+    if (!data.has_more && !pageToken) break;
+  } while (pageToken);
+
+  return items
+    .map((item) => buildRecordFromBitableRecord(normalizeBitableRecordFieldNames(item, fieldNameById)))
+    .filter((record) => record.reserveId)
+    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+}
+
+async function getBitableFieldNameMap(token) {
+  if (bitableFieldNameCache) return bitableFieldNameCache;
+  const data = await feishuRequest(`/open-apis/bitable/v1/apps/${encodeURIComponent(bitableConfig.appToken)}/tables/${encodeURIComponent(bitableConfig.tableId)}/fields`, {
+    method: 'GET',
+    token,
+    query: { page_size: '100' }
+  });
+  bitableFieldNameCache = Object.fromEntries((data.items || []).map((field) => [
+    field.field_id || field.id,
+    field.field_name || field.name
+  ]).filter(([id, name]) => id && name));
+  return bitableFieldNameCache;
+}
+
+function normalizeBitableRecordFieldNames(item, fieldNameById) {
+  const fields = {};
+  for (const [key, value] of Object.entries(item.fields || {})) {
+    fields[fieldNameById[key] || key] = value;
+  }
+  return { ...item, fields };
+}
+
+async function findBitableRecordIdByReserveId(reserveId, token) {
+  if (!reserveId) return '';
+  const current = records.get(reserveId);
+  if (current?.bitableRecordId) return current.bitableRecordId;
+  await refreshRecordsFromStore(token);
+  return records.get(reserveId)?.bitableRecordId || '';
+}
+
+async function getRecordByReserveId(reserveId) {
+  await refreshRecordsFromStore();
+  return records.get(reserveId) || null;
+}
+
+function meetingFromRecord(record = {}) {
+  return {
+    reserveId: record.reserveId,
+    topic: record.topic,
+    meetingNo: record.meetingNo,
+    password: record.password,
+    url: record.meetingUrl,
+    endTime: record.endTime,
+    status: record.status,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    ownerId: record.ownerId,
+    ownerName: record.ownerName,
+    minuteToken: record.minuteToken,
+    minuteUrl: record.minuteUrl,
+    bitableSyncStatus: record.bitableSyncStatus,
+    summaryTitle: record.summaryTitle,
+    highlights: record.highlights || [],
+    actions: record.actions || [],
+    artifacts: record.artifacts || [],
+    summary: record.summaryTitle ? {
+      source: record.summarySource,
+      title: record.summaryTitle,
+      minuteToken: record.minuteToken,
+      minuteUrl: record.minuteUrl,
+      highlights: record.highlights || [],
+      actions: record.actions || [],
+      artifacts: record.artifacts || []
+    } : null
+  };
+}
+
 async function loadRecords() {
+  if (hasBitableStorage()) {
+    await refreshRecordsFromStore();
+    return;
+  }
   try {
     const text = await readFile(recordsPath, 'utf8');
     const parsed = JSON.parse(text);

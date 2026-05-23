@@ -351,6 +351,111 @@ export function getRecordSmartNoteUrl(record = {}, { baseUrl = '' } = {}) {
   return '';
 }
 
+export function buildRecordFromBitableRecord(item = {}) {
+  const fields = item.fields || {};
+  const artifacts = parseBitableArtifacts(fields['飞书产物']);
+  const minuteUrl = parseBitableUrl(fields['妙记链接']);
+  return {
+    id: parseBitableText(fields['预约ID']) || item.record_id || item.id || '',
+    reserveId: parseBitableText(fields['预约ID']) || item.record_id || item.id || '',
+    topic: parseBitableText(fields['会议主题']),
+    status: statusFromText(parseBitableText(fields['会议状态'])),
+    meetingNo: parseBitableText(fields['会议号']),
+    meetingUrl: parseBitableUrl(fields['会议链接']),
+    password: '',
+    ownerId: parseBitableText(fields['归属人ID']),
+    ownerName: parseBitableText(fields['归属人']),
+    endTime: '',
+    meetingId: '',
+    minuteToken: extractMinuteToken(minuteUrl) || artifacts.find((artifact) => artifact.type === '妙记')?.token || '',
+    minuteUrl,
+    duration: 0,
+    summarySource: '',
+    summaryTitle: parseBitableText(fields['纪要标题']),
+    highlights: parseBitableLines(fields['关键结论']),
+    actions: parseBitableLines(fields['待办事项']),
+    artifacts,
+    createdAt: parseBitableTime(fields['创建时间']),
+    updatedAt: parseBitableTime(fields['更新时间']),
+    bitableRecordId: item.record_id || item.id || '',
+    bitableSyncStatus: 'SYNCED',
+    bitableSyncError: ''
+  };
+}
+
+function parseBitableText(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) {
+    return value.map((item) => parseBitableText(item)).filter(Boolean).join('');
+  }
+  if (typeof value === 'object') {
+    return String(value.text || value.name || value.value || value.link || value.url || '').trim();
+  }
+  return '';
+}
+
+function parseBitableUrl(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => parseBitableUrl(item)).find(Boolean) || '';
+  }
+  if (typeof value === 'object') {
+    return value.link || value.url || value.text || '';
+  }
+  return '';
+}
+
+function parseBitableLines(value) {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => parseBitableLines(item)).filter(Boolean);
+  }
+  return parseBitableText(value).split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+}
+
+function parseBitableArtifacts(value) {
+  return parseBitableLines(value).map((line) => {
+    const index = line.indexOf(':');
+    const type = index === -1 ? line : line.slice(0, index);
+    const artifactValue = index === -1 ? '' : line.slice(index + 1);
+    if (type === '妙记') {
+      return {
+        type,
+        ...(extractMinuteToken(artifactValue) ? { url: artifactValue, token: extractMinuteToken(artifactValue) } : { token: artifactValue })
+      };
+    }
+    if (['智能纪要文档', '纪要文档', '飞书文档', '逐字稿文档'].includes(type)) {
+      return { type, docToken: artifactValue };
+    }
+    if (type === '智能纪要') return { type, noteId: artifactValue };
+    if (type === 'AI产物') return { type, kind: artifactValue };
+    if (type === '同步提示') return { type, message: artifactValue };
+    return artifactValue ? { type, value: artifactValue } : { type };
+  });
+}
+
+function parseBitableTime(value) {
+  const text = parseBitableText(value);
+  const timestamp = Number(text);
+  if (Number.isFinite(timestamp) && timestamp > 0) {
+    return new Date(timestamp).toISOString();
+  }
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : '';
+}
+
+function statusFromText(value) {
+  const text = parseBitableText(value);
+  const map = {
+    已创建: 'RESERVED',
+    纪要已同步: 'SUMMARY_READY',
+    已过期: 'EXPIRED',
+    处理中: 'PROCESSING'
+  };
+  return map[text] || text || 'RESERVED';
+}
+
 export function buildFeishuDocUrl(docToken = '', baseUrl = '') {
   if (!docToken) return '';
   const origin = baseUrl ? new URL(baseUrl).origin : 'https://feishu.cn';
