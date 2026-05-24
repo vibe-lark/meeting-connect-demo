@@ -13,6 +13,7 @@ import {
   buildOAuthCallbackDiagnostic,
   buildMeetingFromRecordingSync,
   buildRecordFromBitableRecord,
+  buildReserveApplyBody,
   buildRecordingReadyEventFromRecordingPayload,
   buildSessionCookie,
   buildSummaryFromMinutes,
@@ -23,6 +24,8 @@ import {
   getRecordMinuteUrl,
   getRecordSmartNoteUrl,
   hasRealSummaryInput,
+  needsSmartNoteDocumentRetry,
+  resolveSmartNoteRetrySummary,
   isUserTokenUsable,
   normalizeFeishuUserInfoPayload,
   normalizeMeetingNo,
@@ -89,8 +92,7 @@ await loadUserToken();
 const createMeetingSchema = z.object({
   topic: z.string().trim().min(1).max(120).default('客户方案演示会议'),
   durationMinutes: z.coerce.number().int().min(5).max(1440).default(60),
-  password: z.string().regex(/^\d{4,9}$/).optional().or(z.literal('')),
-  autoRecord: z.boolean().default(true)
+  password: z.string().regex(/^\d{4,9}$/).optional().or(z.literal(''))
 });
 
 const syncSummarySchema = z.object({
@@ -313,17 +315,13 @@ app.post('/api/meetings', async (req, res, next) => {
       method: 'POST',
       token,
       query: { user_id_type: process.env.FEISHU_USER_ID_TYPE || 'open_id' },
-      body: {
-        end_time: String(endTime),
-        owner_id: currentUser.openId,
-        meeting_settings: {
-          topic: input.topic,
-          meeting_initial_type: 1,
-          auto_record: input.autoRecord,
-          ...(input.password !== undefined ? { password: input.password } : {}),
-          action_permissions: buildOpenFeishuUserPermissions()
-        }
-      }
+      body: buildReserveApplyBody({
+        topic: input.topic,
+        endTime,
+        ownerId: currentUser.openId,
+        password: input.password,
+        actionPermissions: buildOpenFeishuUserPermissions()
+      })
     });
 
     const meeting = {
@@ -855,7 +853,9 @@ async function syncRecordingReadyEvent(event, { ownerId = '' } = {}) {
     noteWarnings.push('未完成飞书授权登录，已先同步 Minutes AI 产物。');
   }
 
-  const summary = buildSummaryFromMinutes({
+  const summary = resolveSmartNoteRetrySummary({
+    previousRecord: existingRecord,
+    summary: buildSummaryFromMinutes({
     minute: {
       ...minute,
       url: minute.url || event.minuteUrl
@@ -863,7 +863,9 @@ async function syncRecordingReadyEvent(event, { ownerId = '' } = {}) {
     artifacts,
     note,
     minuteToken: event.minuteToken,
-    noteWarning: noteWarnings.join('；')
+    noteWarning: noteWarnings.join('；'),
+    baseUrl: bitableConfig.url
+    })
   });
 
   const meeting = buildMeetingFromRecordingSync({
@@ -899,7 +901,7 @@ async function pollRecordings() {
   try {
     await refreshRecordsFromStore();
     const pendingRecords = Array.from(records.values())
-      .filter((record) => record.meetingNo && record.status !== 'SUMMARY_READY')
+      .filter((record) => normalizeMeetingNo(record.meetingNo) && (record.status !== 'SUMMARY_READY' || needsSmartNoteDocumentRetry(record)))
       .filter((record) => isRecentEnoughForPolling(record));
     if (!pendingRecords.length) return;
 
@@ -1127,6 +1129,7 @@ async function syncRecordToFeishuBitable(record, tenantToken) {
     records.set(record.reserveId, {
       ...record,
       bitableRecordId: bitableRecord.record_id || bitableRecord.id || record.bitableRecordId,
+      bitableRecordUrl: bitableRecord.record_url || bitableRecord.shared_url || record.bitableRecordUrl || '',
       bitableSyncStatus: 'SYNCED',
       bitableSyncError: ''
     });
@@ -1148,13 +1151,20 @@ function buildBitableFields(record) {
     ...buildOptionalUrlFields(record),
     '关键结论': record.highlights.join('\n'),
     '待办事项': record.actions.join('\n'),
-    '飞书产物': record.artifacts.map((item) => {
-      const value = item.docToken || item.noteId || item.url || item.token || item.message || '';
-      return `${item.type || '产物'}:${value}`;
-    }).join('\n'),
+    '飞书产物': record.artifacts.map((item) => `${item.type || '产物'}:${artifactValueForBitable(item)}`).join('\n'),
     '创建时间': Date.parse(record.createdAt),
     '更新时间': Date.parse(record.updatedAt)
   };
+}
+
+function artifactValueForBitable(item = {}) {
+  if (['智能纪要文档', '纪要文档', '飞书文档', '逐字稿文档'].includes(item.type)) {
+    return item.url || item.docToken || '';
+  }
+  if (item.type === '智能纪要重试') {
+    return String(item.count ?? item.value ?? 0);
+  }
+  return item.noteId || item.url || item.token || item.message || item.kind || item.value || '';
 }
 
 function buildOptionalUrlFields(record) {
@@ -1201,10 +1211,27 @@ async function listBitableMeetingRecords(token) {
     if (!data.has_more && !pageToken) break;
   } while (pageToken);
 
-  return items
+  const itemsWithRecordUrls = await Promise.all(items.map((item) => getBitableRecordWithSharedUrl(item, token).catch(() => item)));
+
+  return itemsWithRecordUrls
     .map((item) => buildRecordFromBitableRecord(normalizeBitableRecordFieldNames(item, fieldNameById)))
     .filter((record) => record.reserveId)
     .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+}
+
+async function getBitableRecordWithSharedUrl(item, token) {
+  const recordId = item.record_id || item.id;
+  if (!recordId) return item;
+  const data = await feishuRequest(`/open-apis/bitable/v1/apps/${encodeURIComponent(bitableConfig.appToken)}/tables/${encodeURIComponent(bitableConfig.tableId)}/records/${encodeURIComponent(recordId)}`, {
+    method: 'GET',
+    token,
+    query: {
+      text_field_as_array: 'true',
+      with_shared_url: 'true',
+      user_id_type: process.env.FEISHU_USER_ID_TYPE || 'open_id'
+    }
+  });
+  return data.record || data;
 }
 
 async function getBitableFieldNameMap(token) {

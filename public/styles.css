@@ -63,15 +63,11 @@ select {
   gap: 8px;
 }
 
-.brand-mark {
-  display: grid;
+.brand-logo {
   width: 32px;
   height: 32px;
-  place-items: center;
   border-radius: 6px;
-  background: var(--primary);
-  color: #fff;
-  font-weight: 800;
+  flex: 0 0 auto;
 }
 
 .brand strong,
@@ -135,6 +131,13 @@ h1 {
 h2 {
   font-size: 16px;
   line-height: 1.4;
+}
+
+.status-title-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .topbar p,
@@ -212,14 +215,10 @@ h2 {
   background: var(--surface-muted);
 }
 
-.flow-heading span {
-  color: var(--text-tertiary);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.flow-heading strong {
+.flow-heading p {
+  margin: 0;
   font-size: 14px;
+  font-weight: 700;
   line-height: 1.45;
 }
 
@@ -521,23 +520,6 @@ button:disabled {
   gap: 12px;
 }
 
-.meeting-link {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid var(--info-border);
-  border-radius: 6px;
-  background: var(--primary-light);
-}
-
-.meeting-link a {
-  color: var(--primary-hover);
-  font-weight: 700;
-  text-decoration: none;
-}
-
 .field-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -835,8 +817,7 @@ tbody tr:last-child td {
   }
 
   .topbar,
-  .panel-head,
-  .meeting-link {
+  .panel-head {
     flex-direction: column;
     align-items: stretch;
   }

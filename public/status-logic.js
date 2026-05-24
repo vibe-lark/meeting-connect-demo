@@ -20,6 +20,24 @@ export function hasMinuteLink(record = {}) {
     && record.artifacts.some((item) => item?.type === '妙记' && (item.url || item.token));
 }
 
+export function isMeetingActiveForStatus(meeting = {}, now = Date.now()) {
+  if (meeting.status === 'EXPIRED') return false;
+  const endTime = Number(meeting.endTime || 0);
+  if (Number.isFinite(endTime) && endTime > 0) {
+    const normalizedEndTime = endTime > 10_000_000_000 ? endTime : endTime * 1000;
+    return normalizedEndTime > now;
+  }
+
+  const createdAt = Date.parse(meeting.createdAt || '');
+  if (!Number.isFinite(createdAt)) return true;
+  const duration = Number(meeting.duration || meeting.durationSeconds || 0);
+  if (Number.isFinite(duration) && duration > 0) {
+    const durationMs = duration > 24 * 3600 ? duration : duration * 1000;
+    return createdAt + durationMs > now;
+  }
+  return new Date(createdAt).toDateString() === new Date(now).toDateString();
+}
+
 export function hasNoSmartNote(record = {}) {
   return Array.isArray(record?.artifacts)
     && record.artifacts.some((item) => item?.type === NO_SMART_NOTE_TEXT);
@@ -81,7 +99,7 @@ export function getRecordStatusText(recordOrStatus) {
     return '等待智能纪要';
   }
   const map = {
-    RESERVED: '已创建，等待参会人加入',
+    RESERVED: '会议已创建，等待妙记回写',
     SUMMARY_READY: '纪要已同步',
     EXPIRED: '预约已过期'
   };
@@ -128,7 +146,7 @@ export function getOAuthDisplayState({ authenticated = false, openId = '', name 
       statusClass: 'status-badge ok',
       buttonText: '已登录',
       metricText: displayName,
-      detailText: `当前登录人：${displayName || '飞书用户'}；创建会议时会使用该用户作为会议归属人。`
+      detailText: `当前登录人：${displayName || '飞书用户'}；创建会议时会使用该用户。`
     };
   }
 

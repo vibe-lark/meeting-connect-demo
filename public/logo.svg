@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="MeetBack">
+  <rect width="64" height="64" rx="14" fill="#1456f0"/>
+  <rect x="14" y="19" width="28" height="24" rx="7" fill="#fff"/>
+  <path d="M42 27.5 52 21v22l-10-6.5v-9Z" fill="#fff"/>
+  <circle cx="26" cy="31" r="4" fill="#1456f0"/>
+  <path d="M21 40c2.5-4 7.5-4 10 0" stroke="#1456f0" stroke-width="3.5" stroke-linecap="round"/>
+</svg>

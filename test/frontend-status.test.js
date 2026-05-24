@@ -8,6 +8,7 @@ import {
   getSummaryDisplayState,
   getSummaryStepState,
   hasMinuteLink,
+  isMeetingActiveForStatus,
   isVerifiedRecordSummary
 } from '../public/status-logic.js';
 
@@ -37,6 +38,20 @@ test('frontend status tolerates empty current record while events are loading', 
     status: 'pending',
     text: '等待会议结束'
   });
+});
+
+test('frontend reserved status does not pretend participant attendance is known', () => {
+  assert.equal(getRecordStatusText({ status: 'RESERVED' }), '会议已创建，等待妙记回写');
+});
+
+test('frontend status hides expired meetings from the status panel', () => {
+  const now = Date.parse('2026-05-24T10:00:00.000Z');
+
+  assert.equal(isMeetingActiveForStatus({ status: 'EXPIRED', endTime: now / 1000 + 3600 }, now), false);
+  assert.equal(isMeetingActiveForStatus({ status: 'RESERVED', endTime: now / 1000 - 1 }, now), false);
+  assert.equal(isMeetingActiveForStatus({ status: 'RESERVED', endTime: now / 1000 + 1 }, now), true);
+  assert.equal(isMeetingActiveForStatus({ status: 'RESERVED', createdAt: '2026-05-23T11:33:00+08:00' }, Date.parse('2026-05-24T11:34:00+08:00')), false);
+  assert.equal(isMeetingActiveForStatus({ status: 'RESERVED', createdAt: '2026-05-24T09:30:00+08:00' }, Date.parse('2026-05-24T10:00:00+08:00')), true);
 });
 
 test('frontend status marks summary complete only for verified minutes artifacts', () => {

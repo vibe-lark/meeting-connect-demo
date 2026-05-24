@@ -12,6 +12,8 @@ export const DEFAULT_OAUTH_SCOPE = [
 export const DEFAULT_SUMMARY_HIGHLIGHT = '飞书妙记已生成，系统已完成自动同步。';
 export const DEFAULT_SUMMARY_ACTION = '打开飞书妙记查看完整纪要和后续行动项。';
 export const NO_SMART_NOTE_TEXT = '无智能纪要';
+export const SMART_NOTE_RETRY_TEXT = '智能纪要重试';
+export const MAX_SMART_NOTE_RETRIES = 30;
 
 export function buildFeishuOAuthAuthorizeUrl({ appId, redirectUri, state, scope = DEFAULT_OAUTH_SCOPE, baseUrl = 'https://accounts.feishu.cn' }) {
   const url = new URL('/open-apis/authen/v1/authorize', baseUrl);
@@ -58,6 +60,26 @@ export function normalizeOAuthTokenPayload(payload = {}, now = Date.now()) {
     expiresAt: expiresIn ? now + expiresIn * 1000 : 0,
     refreshExpiresAt: refreshExpiresIn ? now + refreshExpiresIn * 1000 : 0,
     updatedAt: new Date(now).toISOString()
+  };
+}
+
+export function buildReserveApplyBody({
+  topic = '客户方案演示会议',
+  endTime,
+  ownerId = '',
+  password = '',
+  actionPermissions = []
+} = {}) {
+  return {
+    end_time: String(endTime),
+    owner_id: ownerId,
+    meeting_settings: {
+      topic,
+      meeting_initial_type: 1,
+      auto_record: true,
+      ...(password !== undefined && password !== '' ? { password } : {}),
+      action_permissions: actionPermissions
+    }
   };
 }
 
@@ -140,9 +162,62 @@ export function hasVerifiedMinutesSummary(record = {}) {
   return hasSmartNoteDocument && hasAiArtifact && (hasRealHighlight || hasRealAction);
 }
 
+export function needsSmartNoteDocumentRetry(record = {}) {
+  if (record.status !== 'SUMMARY_READY' || record.bitableSyncStatus !== 'SYNCED') return false;
+  if (!record.minuteToken) return false;
+  if (hasNoSmartNote(record)) return false;
+  if (getSmartNoteRetryCount(record) >= MAX_SMART_NOTE_RETRIES) return false;
+  return !hasVerifiedMinutesSummary(record);
+}
+
 export function hasNoSmartNote(record = {}) {
   return Array.isArray(record?.artifacts)
     && record.artifacts.some((item) => item?.type === NO_SMART_NOTE_TEXT);
+}
+
+export function getSmartNoteRetryCount(recordOrSummary = {}) {
+  const artifact = Array.isArray(recordOrSummary.artifacts)
+    ? recordOrSummary.artifacts.find((item) => item?.type === SMART_NOTE_RETRY_TEXT)
+    : null;
+  const count = Number(artifact?.count ?? artifact?.value ?? 0);
+  return Number.isFinite(count) && count > 0 ? count : 0;
+}
+
+export function resolveSmartNoteRetrySummary({ previousRecord = null, summary = {} } = {}) {
+  if (hasVerifiedMinutesSummary({
+    status: 'SUMMARY_READY',
+    bitableSyncStatus: 'SYNCED',
+    summaryTitle: summary.title,
+    highlights: summary.highlights || [],
+    actions: summary.actions || [],
+    artifacts: summary.artifacts || []
+  }) || hasNoSmartNote(summary)) {
+    return summary;
+  }
+
+  const retryCount = Math.min(getSmartNoteRetryCount(previousRecord) + 1, MAX_SMART_NOTE_RETRIES);
+  const artifacts = [
+    ...(Array.isArray(summary.artifacts) ? summary.artifacts.filter((item) => item?.type !== SMART_NOTE_RETRY_TEXT && item?.type !== NO_SMART_NOTE_TEXT) : []),
+    { type: SMART_NOTE_RETRY_TEXT, count: retryCount }
+  ];
+
+  if (retryCount >= MAX_SMART_NOTE_RETRIES) {
+    return {
+      ...summary,
+      title: NO_SMART_NOTE_TEXT,
+      highlights: [NO_SMART_NOTE_TEXT],
+      actions: [],
+      artifacts: [
+        ...artifacts,
+        { type: NO_SMART_NOTE_TEXT }
+      ]
+    };
+  }
+
+  return {
+    ...summary,
+    artifacts
+  };
 }
 
 export function findLatestMinutesSyncCandidate(records = []) {
@@ -296,7 +371,7 @@ export function findRecordKeyForRecordingEvent(records, event) {
   return '';
 }
 
-export function buildSummaryFromMinutes({ minute = {}, artifacts = {}, note = null, minuteToken = '', noteWarning = '' }) {
+export function buildSummaryFromMinutes({ minute = {}, artifacts = {}, note = null, minuteToken = '', noteWarning = '', baseUrl = '' }) {
   const minuteUrl = minute.url || minute.minute_url || (minuteToken ? `https://meetings.feishu.cn/minutes/${minuteToken}` : '');
   const noteId = minute.note_id || minute.noteId || minute.note?.id || artifacts.note_id || '';
   const highlights = uniqueNonEmpty([
@@ -304,7 +379,7 @@ export function buildSummaryFromMinutes({ minute = {}, artifacts = {}, note = nu
     ...normalizeChapterItems(artifacts.minute_chapters || artifacts.chapters)
   ]);
   const actions = uniqueNonEmpty(normalizeTodoItems(artifacts.minute_todos || artifacts.todos));
-  const noteArtifacts = normalizeNoteArtifacts(note?.artifacts || []);
+  const noteArtifacts = normalizeNoteArtifacts(note?.artifacts || [], { baseUrl });
   const aiArtifacts = normalizeAiArtifactMarkers(artifacts);
   const noSmartNote = Boolean(minuteUrl)
     && !noteWarning
@@ -344,7 +419,10 @@ export function getRecordMinuteUrl(record = {}) {
 
 export function getRecordSmartNoteUrl(record = {}, { baseUrl = '' } = {}) {
   const artifacts = Array.isArray(record.artifacts) ? record.artifacts : [];
-  const docArtifact = artifacts.find((item) => ['智能纪要文档', '纪要文档', '飞书文档'].includes(item?.type) && item.docToken);
+  const docArtifact = artifacts.find((item) => ['智能纪要文档', '纪要文档', '飞书文档'].includes(item?.type) && (item.url || item.docToken));
+  if (docArtifact?.url) {
+    return docArtifact.url;
+  }
   if (docArtifact?.docToken) {
     return buildFeishuDocUrl(docArtifact.docToken, baseUrl);
   }
@@ -378,6 +456,7 @@ export function buildRecordFromBitableRecord(item = {}) {
     createdAt: parseBitableTime(fields['创建时间']),
     updatedAt: parseBitableTime(fields['更新时间']),
     bitableRecordId: item.record_id || item.id || '',
+    bitableRecordUrl: item.record_url || item.shared_url || '',
     bitableSyncStatus: 'SYNCED',
     bitableSyncError: ''
   };
@@ -426,10 +505,14 @@ function parseBitableArtifacts(value) {
       };
     }
     if (['智能纪要文档', '纪要文档', '飞书文档', '逐字稿文档'].includes(type)) {
-      return { type, docToken: artifactValue };
+      const docToken = extractFeishuDocToken(artifactValue);
+      return artifactValue.startsWith('http')
+        ? { type, url: artifactValue, ...(docToken ? { docToken } : {}) }
+        : { type, docToken: artifactValue };
     }
     if (type === '智能纪要') return { type, noteId: artifactValue };
     if (type === 'AI产物') return { type, kind: artifactValue };
+    if (type === SMART_NOTE_RETRY_TEXT) return { type, count: Number(artifactValue || 0) || 0 };
     if (type === '同步提示') return { type, message: artifactValue };
     return artifactValue ? { type, value: artifactValue } : { type };
   });
@@ -460,6 +543,18 @@ export function buildFeishuDocUrl(docToken = '', baseUrl = '') {
   if (!docToken) return '';
   const origin = baseUrl ? new URL(baseUrl).origin : 'https://feishu.cn';
   return `${origin}/docx/${encodeURIComponent(docToken)}`;
+}
+
+function extractFeishuDocToken(value = '') {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  try {
+    const url = new URL(text);
+    const match = url.pathname.match(/\/docx\/([^/?#]+)/);
+    return match ? decodeURIComponent(match[1]) : '';
+  } catch {
+    return '';
+  }
 }
 
 function normalizeAiArtifactMarkers(artifacts = {}) {
@@ -539,12 +634,14 @@ function normalizeTodoItems(todos) {
   });
 }
 
-function normalizeNoteArtifacts(artifacts) {
+function normalizeNoteArtifacts(artifacts, { baseUrl = '' } = {}) {
   if (!Array.isArray(artifacts)) return [];
   return artifacts.map((item) => {
+    const docToken = item.doc_token || item.docToken || '';
     const normalized = {
       type: item.artifact_type === 1 ? '智能纪要文档' : item.artifact_type === 2 ? '逐字稿文档' : '飞书文档',
-      docToken: item.doc_token || item.docToken || ''
+      docToken,
+      ...(docToken ? { url: buildFeishuDocUrl(docToken, baseUrl) } : {})
     };
     const createTime = item.create_time || item.createTime || '';
     return createTime ? { ...normalized, createTime } : normalized;

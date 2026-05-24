@@ -45,12 +45,27 @@ test('create and meeting status panels keep matching height on desktop', async (
 
 test('primary demo surface uses customer-facing copy instead of integration jargon', async () => {
   const html = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
+  const app = await readFile(new URL('../public/app.js', import.meta.url), 'utf8');
   const primarySurface = html.split('<details class="panel table-panel technical-panel"')[0];
   const primaryText = primarySurface.replace(/<[^>]+>/g, ' ');
 
   assert.match(primarySurface, /<title>MeetBack 会议同步台<\/title>/);
+  assert.match(primarySurface, /<img class="brand-logo" src="\/logo\.svg" alt="MeetBack"/);
   assert.match(primarySurface, /<h1>MeetBack 会议同步台<\/h1>/);
   assert.match(primaryText, /演示飞书会议开放能力：在自研页面发起真实会议，并把会后的妙记和智能纪要回写到多维表格。/);
+  assert.match(primarySurface, /<p>体验流程：状态与真实状态保持一致<\/p>/);
+  assert.doesNotMatch(primarySurface, /<span>体验流程<\/span>/);
+  assert.doesNotMatch(primarySurface, /<strong>状态与真实状态保持一致<\/strong>/);
+  assert.match(primarySurface, /<strong>发起会议<\/strong>/);
+  assert.match(primarySurface, /<strong>加入会议<\/strong>/);
+  assert.match(primarySurface, /待发起会议/);
+  assert.match(primarySurface, /待加入会议/);
+  assert.match(primarySurface, /<strong>播放一段内容后退出<\/strong>/);
+  assert.match(primarySurface, /待会议结束/);
+  assert.match(primarySurface, /<strong>自动回写多维表格<\/strong>/);
+  assert.match(primarySurface, /待自动回写/);
+  assert.doesNotMatch(primaryText, /技术链路|可验收的开放能力/);
+  assert.doesNotMatch(primaryText, /登录飞书|写入多维表格|回写智能纪要/);
   assert.doesNotMatch(primaryText, /飞书会议开放能力演示/);
   assert.doesNotMatch(primaryText, /自研业务页演示/);
   assert.doesNotMatch(primaryText, /飞书会议纪要回写 Demo/);
@@ -58,9 +73,21 @@ test('primary demo surface uses customer-facing copy instead of integration jarg
   assert.doesNotMatch(primarySurface, /<section class="metrics"/);
   assert.doesNotMatch(primarySurface, /<ol class="demo-checklist"/);
   assert.doesNotMatch(primarySurface, /<h2 id="summary-title">同步进度<\/h2>/);
-  assert.match(primarySurface, /<h2 id="status-title">会议状态<\/h2>/);
+  assert.match(primarySurface, /<h2 id="status-title" class="status-title-line">会议状态 <span id="meetingStatusBadge"/);
+  assert.match(primarySurface, /会议号、预约信息和纪要回写进度都在这里。/);
+  assert.match(primarySurface, /发起会议后，这里会显示会议号和预约信息。/);
+  assert.doesNotMatch(primarySurface, /入会链接、纪要回写进度和查看入口都在这里。/);
+  assert.match(app, /<div class="field"><span>预约时间<\/span><strong>\$\{escapeHtml\(formatFullTime\(meeting\.createdAt\) \|\| '-'\)\}<\/strong><\/div>/);
+  assert.match(app, /<div class="field"><span>会议主题<\/span>/);
+  assert.match(app, /<div class="field"><span>会议号<\/span><strong>\$\{joinUrl \? `<a class="inline-link"/);
+  assert.match(app, /records\.find\(isMeetingActiveForStatus\)/);
+  assert.match(app, /过期会议不会显示在这里，可在下方数据表查看历史记录。/);
+  assert.doesNotMatch(app, /<div class="meeting-link">/);
+  assert.doesNotMatch(app, /<span>会议归属人<\/span>/);
+  assert.doesNotMatch(app, /<span>入会链接<\/span>/);
   assert.doesNotMatch(primaryText, /SSO|Owner|Meeting Base|recording_ready|minute token|user token/);
   assert.doesNotMatch(primaryText, /token|note_id/);
+  assert.doesNotMatch(primarySurface, /brand-mark/);
 });
 
 test('meeting table copy guides users to the demo Base instead of exposing summary contents', async () => {
@@ -70,7 +97,8 @@ test('meeting table copy guides users to the demo Base instead of exposing summa
   assert.match(app, /去数据表查看/);
   assert.match(app, /打开会议/);
   assert.match(app, /data-label="查看"><a class="table-action"/);
-  assert.match(app, /href="\$\{escapeAttribute\(latestConfig\?\.baseUrl \|\| '#'\)\}"/);
+  assert.match(app, /href="\$\{escapeAttribute\(recordBitableUrl\(record\)\)\}"/);
+  assert.match(app, /function recordBitableUrl\(record = \{\}\)/);
   assert.match(app, /if \(latestRecords\.length\) renderRecords\(latestRecords\)/);
   assert.doesNotMatch(app, /<strong>关键结论<\/strong>/);
   assert.doesNotMatch(app, /<strong>待办事项<\/strong>/);

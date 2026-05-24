@@ -9,6 +9,7 @@ import {
   buildMeetingFromRecordingSync,
   buildFeishuOAuthAuthorizeUrl,
   buildMinutesPermissionAuthUrl,
+  buildReserveApplyBody,
   buildRecordingReadyEventFromRecordingPayload,
   buildSummaryFromMinutes,
   buildFeishuDocUrl,
@@ -24,6 +25,9 @@ import {
   hasRealSummaryInput,
   hasMinutesArtifactsContent,
   hasVerifiedMinutesSummary,
+  MAX_SMART_NOTE_RETRIES,
+  needsSmartNoteDocumentRetry,
+  resolveSmartNoteRetrySummary,
   isInternetReadableBasePermission,
   isUserTokenUsable,
   normalizeFeishuEventBody,
@@ -241,6 +245,29 @@ test('normalizeFeishuEventBody decrypts encrypted event JSON', () => {
   );
 });
 
+test('buildReserveApplyBody always enables cloud recording for smart notes', () => {
+  assert.deepEqual(
+    buildReserveApplyBody({
+      topic: '网页端会议',
+      endTime: 1779508000,
+      ownerId: 'ou_owner',
+      password: '',
+      autoRecord: false,
+      actionPermissions: [{ permission: 1, permission_checkers: [] }]
+    }),
+    {
+      end_time: '1779508000',
+      owner_id: 'ou_owner',
+      meeting_settings: {
+        topic: '网页端会议',
+        meeting_initial_type: 1,
+        auto_record: true,
+        action_permissions: [{ permission: 1, permission_checkers: [] }]
+      }
+    }
+  );
+});
+
 test('buildMeetingFromRecordingSync updates the matched reserve record', () => {
   const meeting = buildMeetingFromRecordingSync({
     event: {
@@ -429,7 +456,8 @@ test('buildSummaryFromMinutes maps minute info, AI artifacts, and note artifacts
       ]
     },
     minuteToken: 'minute_token_123',
-    noteWarning: ''
+    noteWarning: '',
+    baseUrl: 'https://digitalsolution.feishu.cn/base/app_token'
   });
 
   assert.equal(summary.source, 'FEISHU_MINUTES');
@@ -449,8 +477,16 @@ test('buildSummaryFromMinutes maps minute info, AI artifacts, and note artifacts
     { type: 'AI产物', kind: 'summary' },
     { type: 'AI产物', kind: 'chapters' },
     { type: 'AI产物', kind: 'todos' },
-    { type: '智能纪要文档', docToken: 'doc_summary' },
-    { type: '逐字稿文档', docToken: 'doc_transcript' }
+    {
+      type: '智能纪要文档',
+      docToken: 'doc_summary',
+      url: 'https://digitalsolution.feishu.cn/docx/doc_summary'
+    },
+    {
+      type: '逐字稿文档',
+      docToken: 'doc_transcript',
+      url: 'https://digitalsolution.feishu.cn/docx/doc_transcript'
+    }
   ]);
 });
 
@@ -489,7 +525,7 @@ test('buildRecordFromBitableRecord maps Bitable fields back to meeting records',
       '飞书产物': [
         { text: '妙记:https://meetings.feishu.cn/minutes/minute_token_123\n' },
         { text: '智能纪要:note_123\n' },
-        { text: '智能纪要文档:doc_summary' }
+        { text: '智能纪要文档:https://digitalsolution.feishu.cn/docx/doc_summary' }
       ],
       '创建时间': 1760000000000,
       '更新时间': 1760000300000
@@ -498,6 +534,7 @@ test('buildRecordFromBitableRecord maps Bitable fields back to meeting records',
 
   assert.equal(record.reserveId, 'reserve_123');
   assert.equal(record.bitableRecordId, 'rec_123');
+  assert.equal(record.bitableRecordUrl, '');
   assert.equal(record.status, 'SUMMARY_READY');
   assert.equal(record.meetingUrl, 'https://vc.feishu.cn/j/123456789');
   assert.equal(record.minuteToken, 'minute_token_123');
@@ -506,8 +543,27 @@ test('buildRecordFromBitableRecord maps Bitable fields back to meeting records',
   assert.deepEqual(record.artifacts, [
     { type: '妙记', url: 'https://meetings.feishu.cn/minutes/minute_token_123', token: 'minute_token_123' },
     { type: '智能纪要', noteId: 'note_123' },
-    { type: '智能纪要文档', docToken: 'doc_summary' }
+    {
+      type: '智能纪要文档',
+      url: 'https://digitalsolution.feishu.cn/docx/doc_summary',
+      docToken: 'doc_summary'
+    }
   ]);
+});
+
+test('buildRecordFromBitableRecord keeps Feishu Base record URLs for row-level links', () => {
+  const record = buildRecordFromBitableRecord({
+    record_id: 'rec_123',
+    record_url: 'https://digitalsolution.feishu.cn/record/DNFrrDUdmeytrScpus9cfoB9nkb',
+    fields: {
+      '预约ID': 'reserve_123',
+      '会议主题': '客户方案演示会议',
+      '会议状态': '已创建'
+    }
+  });
+
+  assert.equal(record.bitableRecordId, 'rec_123');
+  assert.equal(record.bitableRecordUrl, 'https://digitalsolution.feishu.cn/record/DNFrrDUdmeytrScpus9cfoB9nkb');
 });
 
 test('smart note links do not fall back to the Feishu minutes page', () => {
@@ -639,6 +695,120 @@ test('hasVerifiedMinutesSummary rejects fallback-only summaries and sync warning
     ],
     bitableSyncStatus: 'SYNCED'
   }), false);
+});
+
+test('needsSmartNoteDocumentRetry keeps polling after minutes summary arrives before note documents', () => {
+  assert.equal(needsSmartNoteDocumentRetry({
+    status: 'SUMMARY_READY',
+    bitableSyncStatus: 'SYNCED',
+    minuteToken: 'obcn_demo',
+    summaryTitle: '测试智能纪要',
+    highlights: ['已取到妙记摘要'],
+    artifacts: [
+      { type: '妙记', token: 'obcn_demo' },
+      { type: '智能纪要', noteId: 'note_demo' },
+      { type: 'AI产物', kind: 'summary' }
+    ]
+  }), true);
+
+  assert.equal(needsSmartNoteDocumentRetry({
+    status: 'SUMMARY_READY',
+    bitableSyncStatus: 'SYNCED',
+    minuteToken: 'obcn_demo',
+    summaryTitle: '测试智能纪要',
+    highlights: ['无智能纪要'],
+    artifacts: [
+      { type: '妙记', token: 'obcn_demo' },
+      { type: '无智能纪要' }
+    ]
+  }), false);
+
+  assert.equal(needsSmartNoteDocumentRetry({
+    status: 'SUMMARY_READY',
+    bitableSyncStatus: 'SYNCED',
+    minuteToken: 'obcn_demo',
+    summaryTitle: '测试智能纪要',
+    highlights: ['已取到完整智能纪要'],
+    artifacts: [
+      { type: '妙记', token: 'obcn_demo' },
+      { type: '智能纪要', noteId: 'note_demo' },
+      { type: 'AI产物', kind: 'summary' },
+      { type: '智能纪要文档', docToken: 'doc_demo' }
+    ]
+  }), false);
+});
+
+test('smart note retry stops at 30 attempts and marks no smart note', () => {
+  const retryableRecord = {
+    status: 'SUMMARY_READY',
+    bitableSyncStatus: 'SYNCED',
+    minuteToken: 'obcn_demo',
+    summaryTitle: '测试智能纪要',
+    highlights: ['已取到妙记摘要'],
+    artifacts: [
+      { type: '妙记', token: 'obcn_demo' },
+      { type: '智能纪要', noteId: 'note_demo' },
+      { type: 'AI产物', kind: 'summary' },
+      { type: '智能纪要重试', count: MAX_SMART_NOTE_RETRIES - 1 }
+    ]
+  };
+
+  assert.equal(needsSmartNoteDocumentRetry(retryableRecord), true);
+
+  const summary = resolveSmartNoteRetrySummary({
+    previousRecord: retryableRecord,
+    summary: {
+      title: '测试智能纪要',
+      minuteToken: 'obcn_demo',
+      highlights: ['已取到妙记摘要'],
+      actions: ['打开飞书妙记查看完整纪要和后续行动项。'],
+      artifacts: [
+        { type: '妙记', token: 'obcn_demo' },
+        { type: '智能纪要', noteId: 'note_demo' },
+        { type: 'AI产物', kind: 'summary' }
+      ]
+    }
+  });
+
+  assert.equal(summary.title, '无智能纪要');
+  assert.deepEqual(summary.highlights, ['无智能纪要']);
+  assert.deepEqual(summary.actions, []);
+  assert.equal(needsSmartNoteDocumentRetry({
+    status: 'SUMMARY_READY',
+    bitableSyncStatus: 'SYNCED',
+    minuteToken: 'obcn_demo',
+    summaryTitle: summary.title,
+    highlights: summary.highlights,
+    artifacts: summary.artifacts
+  }), false);
+  assert.deepEqual(summary.artifacts, [
+    { type: '妙记', token: 'obcn_demo' },
+    { type: '智能纪要', noteId: 'note_demo' },
+    { type: 'AI产物', kind: 'summary' },
+    { type: '智能纪要重试', count: MAX_SMART_NOTE_RETRIES },
+    { type: '无智能纪要' }
+  ]);
+});
+
+test('buildRecordFromBitableRecord parses persisted smart note retry counts', () => {
+  const record = buildRecordFromBitableRecord({
+    record_id: 'rec_retry',
+    fields: {
+      '预约ID': 'reserve_retry',
+      '会议主题': '测试智能纪要',
+      '会议状态': '纪要已同步',
+      '妙记链接': { text: '打开妙记', link: 'https://meetings.feishu.cn/minutes/obcn_retry' },
+      '纪要标题': '测试智能纪要',
+      '关键结论': '已取到妙记摘要',
+      '飞书产物': '妙记:https://meetings.feishu.cn/minutes/obcn_retry\n智能纪要重试:12'
+    }
+  });
+
+  assert.equal(needsSmartNoteDocumentRetry(record), true);
+  assert.deepEqual(record.artifacts.find((item) => item.type === '智能纪要重试'), {
+    type: '智能纪要重试',
+    count: 12
+  });
 });
 
 test('findLatestMinutesSyncCandidate ignores older fallback records with permission warnings', () => {

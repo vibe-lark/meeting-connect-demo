@@ -6,12 +6,14 @@ import {
   getSummaryDisplayState,
   getSummaryStepState,
   hasMinuteLink,
+  isMeetingActiveForStatus,
   isVerifiedRecordSummary
 } from './status-logic.js';
 
 const meetingForm = document.querySelector('#meetingForm');
 const meetingState = document.querySelector('#meetingState');
 const summaryState = document.querySelector('#summaryState');
+const meetingStatusBadge = document.querySelector('#meetingStatusBadge');
 const refreshButton = document.querySelector('#refreshButton');
 const createButton = document.querySelector('#createButton');
 const reloadRecordsButton = document.querySelector('#reloadRecordsButton');
@@ -25,12 +27,12 @@ const oauthStatus = document.querySelector('#oauthStatus');
 const oauthButton = document.querySelector('#oauthButton');
 const oauthInlineButton = document.querySelector('#oauthInlineButton');
 const oauthDetail = document.querySelector('#oauthDetail');
-const stepSso = document.querySelector('#stepSso');
-const stepSsoText = document.querySelector('#stepSsoText');
 const stepMeeting = document.querySelector('#stepMeeting');
 const stepMeetingText = document.querySelector('#stepMeetingText');
-const stepBase = document.querySelector('#stepBase');
-const stepBaseText = document.querySelector('#stepBaseText');
+const stepJoin = document.querySelector('#stepJoin');
+const stepJoinText = document.querySelector('#stepJoinText');
+const stepContent = document.querySelector('#stepContent');
+const stepContentText = document.querySelector('#stepContentText');
 const stepSummary = document.querySelector('#stepSummary');
 const stepSummaryText = document.querySelector('#stepSummaryText');
 const baseLink = document.querySelector('#baseLink');
@@ -42,6 +44,13 @@ let minutesPermissionAuthUrl = '';
 let currentAuth = { authenticated: false, openId: '', name: '' };
 let currentOAuthStatus = null;
 let latestConfig = null;
+
+const initialFlowState = {
+  meeting: '待发起会议',
+  join: '待加入会议',
+  content: '待会议结束',
+  summary: '待自动回写'
+};
 
 createButton.disabled = true;
 
@@ -61,8 +70,7 @@ meetingForm.addEventListener('submit', async (event) => {
     const payload = {
       topic: String(form.get('topic') || '').trim(),
       durationMinutes: Number(form.get('durationMinutes') || 60),
-      password: String(form.get('password') || '').trim() || undefined,
-      autoRecord: form.get('autoRecord') === 'on'
+      password: String(form.get('password') || '').trim() || undefined
     };
     const data = await api('/api/meetings', { method: 'POST', body: payload });
     setMeeting(data.meeting);
@@ -147,7 +155,6 @@ async function loadConfigStatus() {
       baseLink.href = status.baseUrl;
     }
     if (latestRecords.length) renderRecords(latestRecords);
-    updateBaseStep(status);
   } catch {}
 }
 
@@ -164,12 +171,10 @@ async function loadOAuthStatus() {
     updateCreateButtonState();
     if (currentAuth.authenticated) {
       updateOAuthDisplay();
-      setFlowStep(stepSso, stepSsoText, 'ok', `已登录 ${displayUserName(status)}`);
       await Promise.all([loadRecords(), loadEvents()]);
     } else {
       updateOAuthDisplay();
       if (oauthInlineButton) oauthInlineButton.textContent = '去登录';
-      setFlowStep(stepSso, stepSsoText, 'warn', '等待飞书登录');
       resetProtectedDataView();
     }
   } catch (error) {
@@ -180,7 +185,6 @@ async function loadOAuthStatus() {
     oauthStatus.textContent = '授权检查失败';
     oauthStatus.className = 'status-badge warn';
     if (oauthDetail) oauthDetail.textContent = error.message;
-    setFlowStep(stepSso, stepSsoText, 'warn', '登录状态未知');
   } finally {
     oauthButton.disabled = false;
     if (oauthInlineButton) oauthInlineButton.disabled = false;
@@ -206,15 +210,16 @@ function resetProtectedDataView() {
   latestRecords = [];
   latestEvents = [];
   meetingState.className = 'empty-state';
-  meetingState.innerHTML = '<strong>暂无会议</strong><span>发起会议后，这里会显示会议号和入会链接。</span>';
+  meetingState.innerHTML = '<strong>暂无会议</strong><span>发起会议后，这里会显示会议号和预约信息。</span>';
+  setMeetingStatusBadge('');
   summaryState.className = 'summary-state';
-  summaryState.innerHTML = '<strong>等待纪要</strong><span>会议结束后等待飞书生成妙记和智能纪要。</span>';
+  summaryState.hidden = true;
+  summaryState.innerHTML = '';
   recordsBody.innerHTML = '<tr><td colspan="7" class="table-empty">请先登录飞书，再查看演示数据。</td></tr>';
   eventsBody.innerHTML = '<tr><td colspan="5" class="table-empty">请先登录飞书，再查看事件日志。</td></tr>';
   eventHint.hidden = true;
   eventHint.innerHTML = '';
-  setFlowStep(stepMeeting, stepMeetingText, 'pending', '登录后可创建');
-  setFlowStep(stepSummary, stepSummaryText, 'pending', '等待登录');
+  resetFlowSteps();
 }
 
 async function loadRecords() {
@@ -223,8 +228,12 @@ async function loadRecords() {
     const records = data.records || [];
     renderRecords(records);
     updateRecordSteps(records);
-    if (!currentMeeting && records.length) {
-      setMeeting(meetingFromRecord(records[0]));
+    const activeRecord = records.find(isMeetingActiveForStatus);
+    if (currentMeeting && !isMeetingActiveForStatus(currentMeeting)) {
+      clearMeetingStatus();
+    }
+    if (!currentMeeting && activeRecord) {
+      setMeeting(meetingFromRecord(activeRecord));
     }
     renderEventHint();
   } catch (error) {
@@ -250,25 +259,27 @@ function setMeeting(meeting) {
   updateCurrentMeetingSteps(meeting);
 }
 
+function clearMeetingStatus() {
+  currentMeeting = null;
+  applyLoginGate();
+  meetingState.className = 'empty-state';
+  meetingState.innerHTML = '<strong>暂无进行中的会议</strong><span>过期会议不会显示在这里，可在下方数据表查看历史记录。</span>';
+  setMeetingStatusBadge('');
+  summaryState.className = 'summary-state';
+  summaryState.hidden = true;
+  summaryState.innerHTML = '';
+}
+
 function renderMeeting(meeting) {
   const joinUrl = meeting.url || meeting.appLink;
+  setMeetingStatusBadge(getSummaryStepState({ latestRecord: meeting }).text || getRecordStatusText(meeting), getSummaryStepState({ latestRecord: meeting }).status);
   meetingState.className = 'meeting-card';
   meetingState.innerHTML = `
-    <div class="meeting-link">
-      <div>
-        <strong>${escapeHtml(meeting.topic || '飞书视频会议')}</strong>
-        <div class="muted">${escapeHtml(getRecordStatusText(meeting))}</div>
-      </div>
-      ${joinUrl ? `<a href="${escapeAttribute(joinUrl)}" target="_blank" rel="noreferrer">打开飞书会议</a>` : '<span class="muted">暂无入会链接</span>'}
-    </div>
     <div class="field-grid">
+      <div class="field"><span>会议主题</span><strong>${escapeHtml(meeting.topic || '飞书视频会议')}</strong></div>
       <div class="field"><span>预约 ID</span><strong>${escapeHtml(meeting.reserveId || '-')}</strong></div>
-      <div class="field"><span>会议号</span><strong>${escapeHtml(meeting.meetingNo || '-')}</strong></div>
-      <div class="field"><span>会议归属人</span><strong>${escapeHtml(displayUserName(meeting))}</strong></div>
-    </div>
-    <div class="field">
-      <span>入会链接</span>
-      <strong>${joinUrl ? `<a class="inline-link" href="${escapeAttribute(joinUrl)}" target="_blank" rel="noreferrer">${escapeHtml(joinUrl)}</a>` : '-'}</strong>
+      <div class="field"><span>预约时间</span><strong>${escapeHtml(formatFullTime(meeting.createdAt) || '-')}</strong></div>
+      <div class="field"><span>会议号</span><strong>${joinUrl ? `<a class="inline-link" href="${escapeAttribute(joinUrl)}" target="_blank" rel="noreferrer">${escapeHtml(meeting.meetingNo || '打开会议')}</a>` : escapeHtml(meeting.meetingNo || '-')}</strong></div>
     </div>
   `;
 }
@@ -278,20 +289,23 @@ function renderSummary(summary) {
   const displayState = getSummaryDisplayState(summaryRecord);
   if (!summary || !displayState) {
     summaryState.className = 'summary-state';
-    summaryState.innerHTML = '<span>会议创建后，请在飞书会议里开启录制和智能纪要，结束后等待自动回写。</span>';
+    summaryState.hidden = true;
+    summaryState.innerHTML = '';
     return;
   }
 
-  summaryState.className = 'summary-card';
-  summaryState.innerHTML = `
-    <h3>${escapeHtml(displayState.title || '纪要已同步')}</h3>
-    <div class="doc-token">${escapeHtml(displayState.verified ? '纪要内容已写入演示数据表，请打开数据表查看完整内容。' : displayState.description)}</div>
-    <div class="summary-actions">
-      ${latestConfig?.baseUrl ? `<a class="secondary link-button" href="${escapeAttribute(latestConfig.baseUrl)}" target="_blank" rel="noreferrer">去数据表查看</a>` : ''}
-      ${minuteUrlFrom(summary) ? `<a class="secondary link-button" href="${escapeAttribute(minuteUrlFrom(summary))}" target="_blank" rel="noreferrer">打开妙记</a>` : ''}
-      ${smartNoteUrlFrom(summary) ? `<a class="secondary link-button" href="${escapeAttribute(smartNoteUrlFrom(summary))}" target="_blank" rel="noreferrer">打开智能纪要</a>` : ''}
-    </div>
-  `;
+  setMeetingStatusBadge(displayState.title || '纪要已同步', displayState.verified ? 'ok' : 'warn');
+  summaryState.hidden = true;
+  summaryState.className = 'summary-state';
+  summaryState.innerHTML = '';
+}
+
+function setMeetingStatusBadge(text, status = 'info') {
+  if (!meetingStatusBadge) return;
+  meetingStatusBadge.hidden = !text;
+  meetingStatusBadge.textContent = text || '';
+  const badgeStatus = status === 'ok' || status === 'warn' ? status : 'info';
+  meetingStatusBadge.className = `status-badge ${badgeStatus}`;
 }
 
 function renderRecords(records) {
@@ -313,7 +327,7 @@ function renderRecords(records) {
       <td data-label="纪要">${summaryCell(record)}</td>
       <td data-label="数据表同步">${syncPill(record.bitableSyncStatus)}</td>
       <td data-label="更新时间">${escapeHtml(formatTime(record.updatedAt))}</td>
-      <td data-label="查看"><a class="table-action" href="${escapeAttribute(latestConfig?.baseUrl || '#')}" target="_blank" rel="noreferrer" aria-disabled="${latestConfig?.baseUrl ? 'false' : 'true'}">查看</a></td>
+      <td data-label="查看"><a class="table-action" href="${escapeAttribute(recordBitableUrl(record))}" target="_blank" rel="noreferrer" aria-disabled="${recordBitableUrl(record) === '#' ? 'true' : 'false'}">查看</a></td>
     </tr>
   `).join('');
 }
@@ -372,22 +386,15 @@ function renderEvents(events) {
   `).join('');
 }
 
-function updateBaseStep(status) {
-  if (status.tableStorage === 'FEISHU_BITABLE' && status.baseUrl) {
-    setFlowStep(stepBase, stepBaseText, 'ok', '多维表格已连接');
-  } else {
-    setFlowStep(stepBase, stepBaseText, 'warn', '等待数据表配置');
-  }
-}
-
 function updateRecordSteps(records) {
-  const latest = records[0];
+  const latest = records.find(isMeetingActiveForStatus);
   if (!latest) {
-    setFlowStep(stepMeeting, stepMeetingText, currentAuth.authenticated ? 'info' : 'pending', currentAuth.authenticated ? '可发起会议' : '登录后可创建');
-    setFlowStep(stepSummary, stepSummaryText, 'pending', '等待会议结束');
+    resetFlowSteps();
     return;
   }
   setFlowStep(stepMeeting, stepMeetingText, 'ok', latest.meetingNo ? `会议号 ${latest.meetingNo}` : '已创建');
+  setFlowStep(stepJoin, stepJoinText, hasMinuteLink(latest) ? 'ok' : 'info', hasMinuteLink(latest) ? '会议已结束' : '请用客户端加入会议');
+  setFlowStep(stepContent, stepContentText, hasMinuteLink(latest) ? 'ok' : 'info', hasMinuteLink(latest) ? '会议已结束，正在处理产物' : '结束后等待妙记生成');
   const summaryState = getSummaryStepState({ latestRecord: latest });
   setFlowStep(stepSummary, stepSummaryText, summaryState.status, summaryState.text);
 }
@@ -395,6 +402,8 @@ function updateRecordSteps(records) {
 function updateCurrentMeetingSteps(meeting) {
   if (!meeting) return;
   setFlowStep(stepMeeting, stepMeetingText, 'ok', meeting.meetingNo ? `会议号 ${meeting.meetingNo}` : '已创建');
+  setFlowStep(stepJoin, stepJoinText, meeting.url || meeting.appLink ? 'info' : 'pending', meeting.url || meeting.appLink ? '请用客户端加入会议' : initialFlowState.join);
+  setFlowStep(stepContent, stepContentText, 'info', '结束后等待妙记生成');
   const summaryState = getSummaryStepState({ latestRecord: meeting });
   setFlowStep(stepSummary, stepSummaryText, summaryState.status, summaryState.text);
 }
@@ -403,6 +412,7 @@ function updateEventStep(events) {
   const recordingEvent = events.find((event) => event.type === 'vc.meeting.recording_ready_v1');
   if (!recordingEvent) return;
   const latestRecord = latestRecords.find((record) => record.meetingNo === recordingEvent.meetingNo) || latestRecords[0];
+  setFlowStep(stepContent, stepContentText, 'ok', '会议已结束，正在处理产物');
   const summaryState = getSummaryStepState({ latestRecord, recordingEvent });
   setFlowStep(stepSummary, stepSummaryText, summaryState.status, summaryState.text);
 }
@@ -410,6 +420,13 @@ function updateEventStep(events) {
 function setFlowStep(element, textElement, status, text) {
   element.className = `flow-step ${status}`;
   textElement.textContent = text;
+}
+
+function resetFlowSteps() {
+  setFlowStep(stepMeeting, stepMeetingText, 'pending', initialFlowState.meeting);
+  setFlowStep(stepJoin, stepJoinText, 'pending', initialFlowState.join);
+  setFlowStep(stepContent, stepContentText, 'pending', initialFlowState.content);
+  setFlowStep(stepSummary, stepSummaryText, 'pending', initialFlowState.summary);
 }
 
 function renderEventHint(events) {
@@ -481,7 +498,7 @@ function statusPill(recordOrStatus) {
 function summaryCell(record) {
   if (isVerifiedRecordSummary(record) || hasMinuteLink(record)) {
     const links = [
-      isVerifiedRecordSummary(record) && latestConfig?.baseUrl ? `<a class="link-cell" href="${escapeAttribute(latestConfig.baseUrl)}" target="_blank" rel="noreferrer">去数据表查看</a>` : '',
+      isVerifiedRecordSummary(record) && recordBitableUrl(record) !== '#' ? `<a class="link-cell" href="${escapeAttribute(recordBitableUrl(record))}" target="_blank" rel="noreferrer">去数据表查看</a>` : '',
       minuteUrlFrom(record) ? `<a class="link-cell" href="${escapeAttribute(minuteUrlFrom(record))}" target="_blank" rel="noreferrer">妙记</a>` : '',
       isVerifiedRecordSummary(record) && smartNoteUrlFrom(record) ? `<a class="link-cell" href="${escapeAttribute(smartNoteUrlFrom(record))}" target="_blank" rel="noreferrer">智能纪要</a>` : ''
     ].filter(Boolean);
@@ -499,6 +516,10 @@ function syncPill(status) {
   };
   const [cls, text] = map[status] || ['info', '待写入数据表'];
   return `<span class="pill ${cls}">${escapeHtml(text)}</span>`;
+}
+
+function recordBitableUrl(record = {}) {
+  return record.bitableRecordUrl || latestConfig?.baseUrl || '#';
 }
 
 function eventStatusPill(status) {

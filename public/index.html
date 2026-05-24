@@ -12,7 +12,7 @@
         <header class="topbar">
           <div class="title-block">
             <div class="brand">
-              <span class="brand-mark">M</span>
+              <img class="brand-logo" src="/logo.svg" alt="MeetBack" width="32" height="32" />
               <div>
                 <strong>MeetBack</strong>
               </div>
@@ -26,37 +26,36 @@
           </div>
         </header>
 
-        <section class="integration-flow" aria-label="集成链路">
+        <section class="integration-flow" aria-label="体验流程">
           <div class="flow-heading">
-            <span>技术链路</span>
-            <strong>可验收的开放能力</strong>
-          </div>
-          <div class="flow-step" id="stepSso">
-            <span class="step-index">1</span>
-            <div>
-              <strong>登录飞书</strong>
-              <small id="stepSsoText">等待登录</small>
-            </div>
+            <p>体验流程：状态与真实状态保持一致</p>
           </div>
           <div class="flow-step" id="stepMeeting">
-            <span class="step-index">2</span>
+            <span class="step-index">1</span>
             <div>
-              <strong>发起真实会议</strong>
-              <small id="stepMeetingText">登录后可创建</small>
+              <strong>发起会议</strong>
+              <small id="stepMeetingText">待发起会议</small>
             </div>
           </div>
-          <div class="flow-step" id="stepBase">
+          <div class="flow-step" id="stepJoin">
+            <span class="step-index">2</span>
+            <div>
+              <strong>加入会议</strong>
+              <small id="stepJoinText">待加入会议</small>
+            </div>
+          </div>
+          <div class="flow-step" id="stepContent">
             <span class="step-index">3</span>
             <div>
-              <strong>写入多维表格</strong>
-              <small id="stepBaseText">检查中</small>
+              <strong>播放一段内容后退出</strong>
+              <small id="stepContentText">待会议结束</small>
             </div>
           </div>
           <div class="flow-step" id="stepSummary">
             <span class="step-index">4</span>
             <div>
-              <strong>回写智能纪要</strong>
-              <small id="stepSummaryText">等待会议结束</small>
+              <strong>自动回写多维表格</strong>
+              <small id="stepSummaryText">待自动回写</small>
             </div>
           </div>
         </section>
@@ -66,7 +65,7 @@
             <div class="panel-head">
               <div>
                 <h2 id="create-title">发起会议</h2>
-                <p>用当前登录人创建真实飞书会议。短会测试时请开启录制和智能纪要。</p>
+                <p>用当前登录人创建真实飞书会议，系统会自动开启云录制以生成智能纪要。</p>
               </div>
             </div>
             <form id="meetingForm" class="form-stack">
@@ -90,10 +89,6 @@
                   <input id="password" name="password" inputmode="numeric" placeholder="可选，4-9 位数字" />
                 </label>
               </div>
-              <label class="toggle">
-                <input id="autoRecord" name="autoRecord" type="checkbox" checked />
-                <span>创建会议时自动打开录制</span>
-              </label>
               <button id="createButton" class="primary" type="submit" disabled>登录后发起会议</button>
             </form>
           </section>
@@ -101,20 +96,17 @@
           <section class="panel status-panel" aria-labelledby="status-title">
             <div class="panel-head compact">
               <div>
-                <h2 id="status-title">会议状态</h2>
-                <p>入会链接、纪要回写进度和查看入口都在这里。</p>
+                <h2 id="status-title" class="status-title-line">会议状态 <span id="meetingStatusBadge" class="status-badge info" hidden>等待会议结束</span></h2>
+                <p>会议号、预约信息和纪要回写进度都在这里。</p>
               </div>
               <button id="refreshButton" class="secondary" type="button" disabled>刷新</button>
             </div>
             <div class="status-stack">
               <div id="meetingState" class="empty-state">
                 <strong>暂无会议</strong>
-                <span>发起会议后，这里会显示会议号和入会链接。</span>
+                <span>发起会议后，这里会显示会议号和预约信息。</span>
               </div>
-              <div id="summaryState" class="summary-state compact-state">
-                <strong>等待纪要</strong>
-                <span>会议结束后等待飞书生成妙记和智能纪要。</span>
-              </div>
+              <div id="summaryState" class="summary-state compact-state" hidden></div>
             </div>
           </section>
         </section>
